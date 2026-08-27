@@ -20,7 +20,15 @@ def test_render_spike_report_includes_task_call_and_mutation_delta():
         rejected=False,
         rejection_reason=None,
     )
-    report = render_spike_report(task=task, call=call, mutation=mutation, fix=fix)
+    report = render_spike_report(
+        task=task,
+        call=call,
+        mutation=mutation,
+        fix=fix,
+        after_description="Modify an existing task's title given its task_id.",
+        model="claude-sonnet-5",
+        seed=1,
+    )
     assert "rename task t1 to Buy milk" in report
     assert "update_task" in report
     assert "Improved: True" in report
@@ -34,7 +42,15 @@ def test_render_spike_report_handles_no_fix():
         before=GradeResult(correct_tool=True, correct_args=True, hallucinated=False, no_call=False),
         after=GradeResult(correct_tool=True, correct_args=True, hallucinated=False, no_call=False),
     )
-    report = render_spike_report(task=task, call=call, mutation=mutation, fix=None)
+    report = render_spike_report(
+        task=task,
+        call=call,
+        mutation=mutation,
+        fix=None,
+        after_description="Create a new task with the given title and priority.",
+        model="claude-sonnet-5",
+        seed=1,
+    )
     assert "Proposed fix" not in report
 
 
@@ -45,6 +61,49 @@ def test_render_spike_report_detects_worsened_mutation():
         before=GradeResult(correct_tool=True, correct_args=True, hallucinated=False, no_call=False),
         after=GradeResult(correct_tool=False, correct_args=False, hallucinated=False, no_call=False),
     )
-    report = render_spike_report(task=task, call=call, mutation=mutation, fix=None)
+    report = render_spike_report(
+        task=task,
+        call=call,
+        mutation=mutation,
+        fix=None,
+        after_description="Delete a task by its task_id.",
+        model="claude-sonnet-5",
+        seed=1,
+    )
     assert "Result: WORSENED" in report
     assert "Improved: False" in report
+
+
+def test_render_spike_report_notes_when_fix_was_rejected_and_includes_metadata():
+    # Fix 4(b)/(c): a rejected fix must not read like a real fix was measured, and the report
+    # must carry enough metadata (model, seed) for someone else to reproduce the result.
+    task = GeneratedTask(text="rename task t1 to Buy milk", tool_name="update_task", arguments={"task_id": "t1", "title": "Buy milk"})
+    call = ToolCall(tool_name="update_task", arguments={"task_id": "t1", "title": "Buy milk"})
+    mutation = MutationResult(
+        before=GradeResult(correct_tool=True, correct_args=True, hallucinated=False, no_call=False),
+        after=GradeResult(correct_tool=True, correct_args=True, hallucinated=False, no_call=False),
+    )
+    fix = ProposedFix(
+        tool_name="update_task",
+        original_description="Add a new task.",
+        new_description="Add a new task.",
+        rejected=True,
+        rejection_reason="identical to original",
+    )
+    report = render_spike_report(
+        task=task,
+        call=call,
+        mutation=mutation,
+        fix=fix,
+        after_description="Add a new task.",
+        model="claude-sonnet-5",
+        seed=7,
+    )
+    assert (
+        "Note: fix was rejected (identical to original), mutation test below re-measures the "
+        "ORIGINAL unchanged description, not a real fix" in report
+    )
+    assert "Description used for 'after': 'Add a new task.'" in report
+    assert "## Metadata" in report
+    assert "- Model: claude-sonnet-5" in report
+    assert "- Seed: 7" in report

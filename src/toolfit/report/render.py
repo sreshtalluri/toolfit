@@ -14,6 +14,9 @@ def render_spike_report(
     call: ToolCall,
     mutation: MutationResult,
     fix: ProposedFix | None,
+    after_description: str,
+    model: str = "claude-sonnet-5",
+    seed: int,
 ) -> str:
     # Compute tri-state result label: IMPROVED, WORSENED, or UNCHANGED
     if mutation.improved:
@@ -32,6 +35,17 @@ def render_spike_report(
         f"- Model called: `{call.tool_name}({call.arguments})`",
         "",
         "## Mutation test",
+    ]
+    if fix is not None and fix.rejected:
+        # Without this, a rejected fix (new_description patched back to the original) still
+        # produces a guaranteed "Result: UNCHANGED" that reads like "we tried a fix and it
+        # didn't help" — when no real fix was ever tested at all.
+        lines.append(
+            f"- Note: fix was rejected ({fix.rejection_reason}), mutation test below re-measures "
+            "the ORIGINAL unchanged description, not a real fix"
+        )
+    lines += [
+        f"- Description used for 'after': {after_description!r}",
         f"- Before: correct_tool={mutation.before.correct_tool}, correct_args={mutation.before.correct_args}, hallucinated={mutation.before.hallucinated}",
         f"- After:  correct_tool={mutation.after.correct_tool}, correct_args={mutation.after.correct_args}, hallucinated={mutation.after.hallucinated}",
         f"- Result: {result_label}",
@@ -46,4 +60,10 @@ def render_spike_report(
             f"- Proposed: {fix.new_description!r}",
             f"- Rejected: {fix.rejected}" + (f" ({fix.rejection_reason})" if fix.rejected else ""),
         ]
+    lines += [
+        "",
+        "## Metadata",
+        f"- Model: {model}",
+        f"- Seed: {seed}",
+    ]
     return "\n".join(lines)

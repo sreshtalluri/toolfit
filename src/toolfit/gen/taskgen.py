@@ -48,7 +48,7 @@ def generate_task(
     prompt = _PROMPT_TEMPLATE.format(description_line=description_line, arguments=arguments)
     response = client.messages.create(
         model=GENERATOR_MODEL,
-        max_tokens=200,
+        max_tokens=1000,
         messages=[{"role": "user", "content": prompt}],
     )
     text = next(block.text for block in response.content if block.type == "text").strip()

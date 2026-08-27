@@ -7,6 +7,7 @@ design doc), out of scope for a single-server, single-request spike.
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -41,13 +42,26 @@ class AnthropicAdapter:
     def call_with_tools(self, *, task_text: str, tools: list[Tool]) -> ToolCall:
         response = self._client.messages.create(
             model=self.MODEL,
-            max_tokens=500,
+            max_tokens=2000,
             tools=[_tool_to_anthropic_schema(t) for t in tools],
             messages=[{"role": "user", "content": task_text}],
         )
         for block in response.content:
             if block.type == "tool_use":
                 return ToolCall(tool_name=block.name, arguments=block.input)
+        if response.stop_reason == "max_tokens":
+            # Sonnet 5 runs adaptive thinking by default and thinking tokens count against
+            # max_tokens — if we truncate before a tool_use block appears, falling through to
+            # the no-call return below is indistinguishable from a real model failure to
+            # grade() (it scores no_call=True either way). That can manufacture a false
+            # "IMPROVED" mutation result (a truncated "before" + a clean "after" looks like
+            # improvement that never happened). Surface it loudly instead of miscounting it
+            # silently. Not restructuring ToolCall/GradeResult to add a real "truncated" state
+            # here — that's a separate, out-of-scope concern.
+            print(
+                "WARNING: response truncated at max_tokens before a tool_use block was found",
+                file=sys.stderr,
+            )
         return ToolCall(tool_name=None, arguments={})
 
 

@@ -40,7 +40,7 @@ def propose_fix(
     )
     response = client.messages.create(
         model=FIXER_MODEL,
-        max_tokens=200,
+        max_tokens=1000,
         messages=[{"role": "user", "content": prompt}],
     )
     # Sonnet 5 runs adaptive thinking by default (no `thinking` param needed to trigger it),
