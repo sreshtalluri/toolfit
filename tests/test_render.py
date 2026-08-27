@@ -36,3 +36,15 @@ def test_render_spike_report_handles_no_fix():
     )
     report = render_spike_report(task=task, call=call, mutation=mutation, fix=None)
     assert "Proposed fix" not in report
+
+
+def test_render_spike_report_detects_worsened_mutation():
+    task = GeneratedTask(text="delete task t5", tool_name="delete_task", arguments={"task_id": "t5"})
+    call = ToolCall(tool_name="delete_task", arguments={"task_id": "t5"})
+    mutation = MutationResult(
+        before=GradeResult(correct_tool=True, correct_args=True, hallucinated=False, no_call=False),
+        after=GradeResult(correct_tool=False, correct_args=False, hallucinated=False, no_call=False),
+    )
+    report = render_spike_report(task=task, call=call, mutation=mutation, fix=None)
+    assert "Result: WORSENED" in report
+    assert "Improved: False" in report

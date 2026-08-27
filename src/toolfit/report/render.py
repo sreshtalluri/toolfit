@@ -15,6 +15,14 @@ def render_spike_report(
     mutation: MutationResult,
     fix: ProposedFix | None,
 ) -> str:
+    # Compute tri-state result label: IMPROVED, WORSENED, or UNCHANGED
+    if mutation.improved:
+        result_label = "IMPROVED"
+    elif mutation.before.passed and not mutation.after.passed:
+        result_label = "WORSENED"
+    else:
+        result_label = "UNCHANGED"
+
     lines = [
         "# toolfit spike report",
         "",
@@ -26,6 +34,7 @@ def render_spike_report(
         "## Mutation test",
         f"- Before: correct_tool={mutation.before.correct_tool}, correct_args={mutation.before.correct_args}, hallucinated={mutation.before.hallucinated}",
         f"- After:  correct_tool={mutation.after.correct_tool}, correct_args={mutation.after.correct_args}, hallucinated={mutation.after.hallucinated}",
+        f"- Result: {result_label}",
         f"- Improved: {mutation.improved}",
     ]
     if fix is not None:
