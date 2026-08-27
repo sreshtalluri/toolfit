@@ -468,7 +468,10 @@ def generate_task(
         max_tokens=200,
         messages=[{"role": "user", "content": prompt}],
     )
-    text = response.content[0].text.strip()
+    # Sonnet 5 runs adaptive thinking by default (no `thinking` param needed to trigger it), so
+    # response.content[0] is not guaranteed to be the text block — SDK guidance is to check
+    # block.type before accessing .text (SDD ledger, Task 3 review finding).
+    text = next(block.text for block in response.content if block.type == "text").strip()
     return GeneratedTask(text=text, tool_name=tool_name, arguments=arguments)
 
 
@@ -1025,7 +1028,11 @@ def propose_fix(
         max_tokens=200,
         messages=[{"role": "user", "content": prompt}],
     )
-    new_description = response.content[0].text.strip()
+    # Sonnet 5 runs adaptive thinking by default (no `thinking` param needed to trigger it),
+    # so response.content[0] is not guaranteed to be the text block — found and fixed as a
+    # Task 3 review finding (SDD ledger), applied here preemptively since taskgen.py had the
+    # identical bug.
+    new_description = next(block.text for block in response.content if block.type == "text").strip()
     return _validate(tool_name, current_description, new_description)
 
 
