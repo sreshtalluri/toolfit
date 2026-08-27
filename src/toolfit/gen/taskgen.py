@@ -51,7 +51,7 @@ def generate_task(
         max_tokens=200,
         messages=[{"role": "user", "content": prompt}],
     )
-    text = response.content[0].text.strip()
+    text = next(block.text for block in response.content if block.type == "text").strip()
     return GeneratedTask(text=text, tool_name=tool_name, arguments=arguments)
 
 
