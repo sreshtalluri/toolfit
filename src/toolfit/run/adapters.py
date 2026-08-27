@@ -6,6 +6,7 @@ design doc), out of scope for a single-server, single-request spike.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -47,4 +48,32 @@ class AnthropicAdapter:
         for block in response.content:
             if block.type == "tool_use":
                 return ToolCall(tool_name=block.name, arguments=block.input)
+        return ToolCall(tool_name=None, arguments={})
+
+
+class OpenRouterAdapter:
+    """Compatibility check adapter (design doc Next Steps #1, TODO 4 — validates OpenRouter's
+    tool-call behavior before M2 commits to it as a full third adapter). Uses OpenRouter's
+    OpenAI-compatible API, not a bespoke client."""
+
+    def __init__(self, client, model: str):
+        self._client = client  # an openai.OpenAI configured with base_url="https://openrouter.ai/api/v1"
+        self._model = model
+
+    def call_with_tools(self, *, task_text: str, tools: list[Tool]) -> ToolCall:
+        response = self._client.chat.completions.create(
+            model=self._model,
+            messages=[{"role": "user", "content": task_text}],
+            tools=[
+                {
+                    "type": "function",
+                    "function": {"name": t.name, "description": t.description or "", "parameters": t.input_schema},
+                }
+                for t in tools
+            ],
+        )
+        message = response.choices[0].message
+        if message.tool_calls:
+            call = message.tool_calls[0]
+            return ToolCall(tool_name=call.function.name, arguments=json.loads(call.function.arguments))
         return ToolCall(tool_name=None, arguments={})
