@@ -9,6 +9,7 @@ stays M4's fix loop (design doc M2 Design, "Explicitly out of scope").
 from __future__ import annotations
 
 import asyncio
+import os
 
 import anthropic
 import typer
@@ -92,6 +93,19 @@ async def _run_eval(server_path: str, *, seeds: int, model: str, mutate: list[st
         typer.echo(str(e), err=True)
         raise typer.Exit(code=1)
 
+    # Task generation always uses Anthropic (GENERATOR_MODEL, gen/taskgen.py), regardless of which
+    # --model the user chose for the model under test — before M2's multi-provider support, --model
+    # was always Anthropic too, so this key requirement was invisible. anthropic.Anthropic() does
+    # not raise on a missing key at construction time; without this explicit check, the failure
+    # would surface as a raw, unhandled TypeError traceback on the first real generator call inside
+    # build_confusion_matrix, not the clean CLI error (exit code 1, message on stderr) required for
+    # missing API keys.
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        typer.echo(
+            "ANTHROPIC_API_KEY is not set — required for task generation regardless of --model",
+            err=True,
+        )
+        raise typer.Exit(code=1)
     generator_client = anthropic.Anthropic()
     matrix = build_confusion_matrix(catalog, adapter, generator_client, seeds=seeds)
     print(render_confusion_matrix(matrix))
