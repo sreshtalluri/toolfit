@@ -91,3 +91,18 @@ def test_passes_a_clearly_solvable_task(client):
         },
     )
     assert result.solvable is True
+
+
+def test_generated_task_for_identifier_shaped_args_uses_modify_language(client):
+    # Grounded in the spike's real finding: with a deliberately vague, copy-pasted description,
+    # the generator defaulted to "create"/"add" phrasing for update-shaped arguments. This test
+    # exercises the fix from Task 3 of the M1 plan.
+    task = generate_task(
+        client,
+        tool_name="update_task",
+        tool_description="Add a new task.",
+        arguments={"task_id": "t1", "title": "Book dentist appointment"},
+    )
+    lowered = task.text.lower()
+    assert not lowered.startswith("create")
+    assert "create a new" not in lowered

@@ -6,7 +6,12 @@ run/)."""
 
 from types import SimpleNamespace
 
-from toolfit.gen.taskgen import GeneratedTask, _parse_solvability_response, check_solvability
+from toolfit.gen.taskgen import (
+    GeneratedTask,
+    _has_identifier_argument,
+    _parse_solvability_response,
+    check_solvability,
+)
 
 
 def test_parses_a_solvable_response():
@@ -49,3 +54,12 @@ def test_check_solvability_warns_on_truncation(capsys):
     check_solvability(fake_client, task, catalog_descriptions={"update_task": "Modify a task."})
 
     assert "truncated" in capsys.readouterr().err.lower()
+
+
+def test_has_identifier_argument_detects_an_id_shaped_field():
+    assert _has_identifier_argument({"task_id": "t1", "title": "X"})
+    assert _has_identifier_argument({"id": "u1"})
+
+
+def test_has_identifier_argument_false_when_no_id_shaped_field():
+    assert not _has_identifier_argument({"title": "X", "priority": "high"})

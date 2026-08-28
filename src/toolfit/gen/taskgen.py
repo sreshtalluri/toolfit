@@ -36,6 +36,21 @@ ONE tool the assistant should call? Reply with exactly one line: either "SOLVABL
 "AMBIGUOUS", followed by a colon and a one-sentence reason."""
 
 
+def _has_identifier_argument(arguments: dict) -> bool:
+    """Heuristic: does this argument set look like it references an EXISTING item (an id-like
+    field alongside other values), rather than fully specifying a brand new one? Informs the
+    create-vs-modify prompt guidance below — grounded in the spike's real create/update
+    phrasing-confound finding (design doc Open Questions, finding 1)."""
+    return any(key == "id" or key.endswith("_id") for key in arguments)
+
+
+_IDENTIFIER_GUIDANCE = (
+    "\n\nNote: these arguments include an identifier for an EXISTING item, alongside other "
+    "values to apply to it — phrase the request as modifying/updating that existing item "
+    "(e.g. \"change task t1's title to X\"), not as creating a brand new one."
+)
+
+
 @dataclass
 class GeneratedTask:
     text: str
@@ -59,6 +74,8 @@ def generate_task(
     """
     description_line = "" if withhold_description else f"Action description: {tool_description}\n"
     prompt = _PROMPT_TEMPLATE.format(description_line=description_line, arguments=arguments)
+    if _has_identifier_argument(arguments):
+        prompt += _IDENTIFIER_GUIDANCE
     response = client.messages.create(
         model=GENERATOR_MODEL,
         max_tokens=1000,
