@@ -239,6 +239,40 @@ def test_scan_reports_real_findings_against_the_toy_server():
     assert "count_tasks, list_tasks share the identical description" in result.output
 
 
+def test_eval_badge_writes_an_svg_file(monkeypatch, tmp_path, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+
+    async def fake_fetch_catalog(params):
+        return ToolCatalog(tools=[Tool(name="tool_a", description="Does A.", inputSchema=_SIMPLE_SCHEMA)])
+
+    matrix = ConfusionMatrix(
+        counts={"tool_a": {"tool_a": 2}},
+        distinct_trials={"tool_a": 2},
+        trials_per_tool={"tool_a": 2},
+        trials_by_tool={
+            "tool_a": [
+                TrialRecord(task=GeneratedTask(text="t1", tool_name="tool_a", arguments={}), passed=True),
+                TrialRecord(task=GeneratedTask(text="t2", tool_name="tool_a", arguments={}), passed=True),
+            ]
+        },
+        model="gpt-5.5",
+        generator_model="claude-sonnet-5",
+        seeds=2,
+    )
+
+    monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
+    monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds: matrix)
+
+    result = runner.invoke(app, ["eval", "somepath", "--badge"])
+
+    assert result.exit_code == 0
+    badge_path = tmp_path / "toolfit-badge.svg"
+    assert badge_path.exists()
+    assert "toolfit: 100%" in badge_path.read_text()
+
+
 def test_eval_still_requires_explicit_subcommand_name_alongside_scan():
     # Regression guard for the Typer single-command-collapse quirk this file already hit once
     # (see this file's module docstring): now that TWO commands are registered (eval, scan),

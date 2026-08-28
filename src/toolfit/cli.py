@@ -17,9 +17,10 @@ import typer
 
 from toolfit.connect.client import fetch_catalog, server_params
 from toolfit.grade.confusion import build_confusion_matrix
-from toolfit.grade.mutator import run_mutation_trials
+from toolfit.grade.mutator import MutationTrialResult, run_mutation_trials
 from toolfit.grade.significance import bonferroni_correct
 from toolfit.lint.rules import run_lint
+from toolfit.report.badge import render_badge
 from toolfit.report.render import render_confusion_matrix, render_lint_report, render_mutation_results
 from toolfit.run.adapters import build_adapter
 
@@ -37,10 +38,16 @@ def eval(
         help="tool_name:new description (repeatable). Runs a paired mutation trial reusing the "
         "base eval's own generated tasks for that tool.",
     ),
+    badge: bool = typer.Option(
+        False,
+        "--badge",
+        help="Write a static SVG badge (toolfit-badge.svg) summarizing the overall pass rate, or "
+        "a before/after delta if exactly one --mutate was tested.",
+    ),
 ) -> None:
     """Build and print a confusion matrix for the given MCP server, optionally testing description
     mutations against it."""
-    asyncio.run(_run_eval(server_path, seeds=seeds, model=model, mutate=mutate))
+    asyncio.run(_run_eval(server_path, seeds=seeds, model=model, mutate=mutate, badge=badge))
 
 
 @app.command()
@@ -72,7 +79,7 @@ def _parse_mutation(spec: str) -> tuple[str, str]:
     return tool_name.strip(), new_description.strip()
 
 
-async def _run_eval(server_path: str, *, seeds: int, model: str, mutate: list[str]) -> None:
+async def _run_eval(server_path: str, *, seeds: int, model: str, mutate: list[str], badge: bool) -> None:
     # Parse --mutate specs before any I/O — a malformed flag should fail fast, not after
     # spending time connecting to a server that was never going to matter.
     parsed_mutations: list[tuple[str, str]] = []
@@ -124,33 +131,38 @@ async def _run_eval(server_path: str, *, seeds: int, model: str, mutate: list[st
     matrix = build_confusion_matrix(catalog, adapter, generator_client, seeds=seeds)
     print(render_confusion_matrix(matrix))
 
-    if not parsed_mutations:
-        return
-
-    results = []
-    for tool_name, new_description in parsed_mutations:
-        if tool_name not in matrix.trials_by_tool:
-            # Excluded from the base eval for a schema warning — already reported above, in the
-            # confusion matrix's own Schema Warnings section. Never suppress this: say explicitly
-            # why the mutation this tool asked for didn't run.
-            typer.echo(
-                f"Skipping --mutate for {tool_name!r}: excluded from the base eval (see Schema Warnings above)",
-                err=True,
+    results: list[MutationTrialResult] = []
+    if parsed_mutations:
+        for tool_name, new_description in parsed_mutations:
+            if tool_name not in matrix.trials_by_tool:
+                # Excluded from the base eval for a schema warning — already reported above, in the
+                # confusion matrix's own Schema Warnings section. Never suppress this: say explicitly
+                # why the mutation this tool asked for didn't run.
+                typer.echo(
+                    f"Skipping --mutate for {tool_name!r}: excluded from the base eval (see Schema Warnings above)",
+                    err=True,
+                )
+                continue
+            results.append(
+                run_mutation_trials(matrix, catalog, adapter, tool_name=tool_name, new_description=new_description)
             )
-            continue
-        results.append(
-            run_mutation_trials(matrix, catalog, adapter, tool_name=tool_name, new_description=new_description)
-        )
 
-    if not results:
-        return
+        if results:
+            significances = bonferroni_correct([r.p_value for r in results])
+            for r, sig in zip(results, significances):
+                r.significant = sig
+            print()
+            print(render_mutation_results(results))
 
-    significances = bonferroni_correct([r.p_value for r in results])
-    for r, sig in zip(results, significances):
-        r.significant = sig
-
-    print()
-    print(render_mutation_results(results))
+    if badge:
+        # A badge is one flat number — with exactly one mutation tested, show its before/after
+        # delta; with zero or several, fall back to the overall pass rate rather than picking an
+        # arbitrary one of several mutations to represent.
+        mutation_result_for_badge = results[0] if len(results) == 1 else None
+        svg = render_badge(matrix, mutation_result_for_badge)
+        with open("toolfit-badge.svg", "w") as f:
+            f.write(svg)
+        typer.echo("Wrote badge to toolfit-badge.svg", err=True)
 
 
 if __name__ == "__main__":
