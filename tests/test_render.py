@@ -209,3 +209,45 @@ def test_render_confusion_matrix_omits_pass_rates_section_when_no_trial_data_is_
     report = render_confusion_matrix(matrix)
 
     assert "## Pass Rates" not in report
+
+
+def test_render_mutation_results_shows_before_after_and_verdict():
+    from toolfit.grade.mutator import MutationTrialResult
+    from toolfit.report.render import render_mutation_results
+
+    result = MutationTrialResult(
+        tool_name="update_task",
+        new_description="Modify an existing task's title given its task_id.",
+        before_passes=[False, False, True],
+        after_passes=[True, True, True],
+        p_value=0.02,
+        significant=True,
+    )
+
+    report = render_mutation_results([result])
+
+    assert "## Mutation Results" in report
+    assert "update_task" in report
+    assert "Modify an existing task's title given its task_id." in report
+    assert "Before: 1/3 (33%)" in report
+    assert "After:  3/3 (100%)" in report
+    assert "p-value: 0.0200" in report
+    assert "SIGNIFICANT" in report
+
+
+def test_render_mutation_results_shows_not_significant_when_correction_rejects_it():
+    from toolfit.grade.mutator import MutationTrialResult
+    from toolfit.report.render import render_mutation_results
+
+    result = MutationTrialResult(
+        tool_name="update_task",
+        new_description="x",
+        before_passes=[False],
+        after_passes=[True],
+        p_value=0.04,
+        significant=False,
+    )
+
+    report = render_mutation_results([result])
+
+    assert "not significant" in report

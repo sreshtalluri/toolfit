@@ -5,7 +5,7 @@ from __future__ import annotations
 from toolfit.fix.fixer import ProposedFix
 from toolfit.gen.taskgen import GeneratedTask
 from toolfit.grade.confusion import HALLUCINATED, NO_CALL, ConfusionMatrix
-from toolfit.grade.mutator import MutationResult
+from toolfit.grade.mutator import MutationResult, MutationTrialResult
 from toolfit.grade.significance import wilson_interval
 from toolfit.run.adapters import ToolCall
 
@@ -119,4 +119,31 @@ def render_confusion_matrix(matrix: ConfusionMatrix) -> str:
         f"- Seeds per tool: {matrix.seeds}",
     ]
 
+    return "\n".join(lines)
+
+
+def render_mutation_results(results: list[MutationTrialResult]) -> str:
+    """Mutation-testing section appended to the eval report when --mutate was used (design doc M2
+    Design §5). Each mutation's `significant` flag has already been corrected for how many
+    mutations ran together in this invocation (cli.py calls bonferroni_correct once, across every
+    result, before this function runs) — this function only renders the verdict, it doesn't
+    compute the correction itself."""
+    lines = ["## Mutation Results"]
+    for r in results:
+        before_n = len(r.before_passes)
+        after_n = len(r.after_passes)
+        before_passed = sum(r.before_passes)
+        after_passed = sum(r.after_passes)
+        before_lo, before_hi = wilson_interval(before_passed, before_n)
+        after_lo, after_hi = wilson_interval(after_passed, after_n)
+        verdict = "SIGNIFICANT" if r.significant else "not significant"
+        lines += [
+            "",
+            f"### {r.tool_name}",
+            f"- New description: {r.new_description!r}",
+            f"- Before: {before_passed}/{before_n} ({before_passed / before_n:.0%}), 95% CI [{before_lo:.0%}, {before_hi:.0%}]",
+            f"- After:  {after_passed}/{after_n} ({after_passed / after_n:.0%}), 95% CI [{after_lo:.0%}, {after_hi:.0%}]",
+            f"- p-value: {r.p_value:.4f}",
+            f"- Verdict (Bonferroni-corrected): {verdict}",
+        ]
     return "\n".join(lines)
