@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from toolfit.fix.fixer import ProposedFix
 from toolfit.gen.taskgen import GeneratedTask
+from toolfit.grade.confusion import HALLUCINATED, NO_CALL, ConfusionMatrix
 from toolfit.grade.mutator import MutationResult
 from toolfit.run.adapters import ToolCall
 
@@ -66,4 +67,35 @@ def render_spike_report(
         f"- Model: {model}",
         f"- Seed: {seed}",
     ]
+    return "\n".join(lines)
+
+
+def render_confusion_matrix(matrix: ConfusionMatrix) -> str:
+    tools = sorted(matrix.counts.keys())
+    actual_values = {actual for row in matrix.counts.values() for actual in row}
+    ordered_columns = sorted((actual_values | set(tools)) - {NO_CALL, HALLUCINATED})
+    for special in (NO_CALL, HALLUCINATED):
+        if special in actual_values:
+            ordered_columns.append(special)
+
+    lines = ["## Confusion Matrix", "", "| Intended \\ Called | " + " | ".join(ordered_columns) + " |"]
+    lines.append("|---" * (len(ordered_columns) + 1) + "|")
+    for tool in tools:
+        row = [str(matrix.counts[tool].get(col, 0)) for col in ordered_columns]
+        lines.append(f"| {tool} | " + " | ".join(row) + " |")
+
+    lines += ["", "## Trial Diversity"]
+    for tool in tools:
+        distinct = matrix.distinct_trials[tool]
+        total = matrix.trials_per_tool[tool]
+        note = " (some seeds sampled identical arguments)" if distinct < total else ""
+        lines.append(f"- {tool}: {distinct}/{total} distinct{note}")
+
+    if matrix.leakage_warnings:
+        lines += ["", "## Leakage Warnings"] + [f"- {w}" for w in matrix.leakage_warnings]
+    if matrix.solvability_warnings:
+        lines += ["", "## Solvability Warnings"] + [f"- {w}" for w in matrix.solvability_warnings]
+    if matrix.schema_warnings:
+        lines += ["", "## Schema Warnings"] + [f"- {w}" for w in matrix.schema_warnings]
+
     return "\n".join(lines)

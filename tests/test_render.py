@@ -1,8 +1,9 @@
 from toolfit.fix.fixer import ProposedFix
 from toolfit.gen.taskgen import GeneratedTask
+from toolfit.grade.confusion import ConfusionMatrix
 from toolfit.grade.grader import GradeResult
 from toolfit.grade.mutator import MutationResult
-from toolfit.report.render import render_spike_report
+from toolfit.report.render import render_confusion_matrix, render_spike_report
 from toolfit.run.adapters import ToolCall
 
 
@@ -107,3 +108,58 @@ def test_render_spike_report_notes_when_fix_was_rejected_and_includes_metadata()
     assert "## Metadata" in report
     assert "- Model: claude-sonnet-5" in report
     assert "- Seed: 7" in report
+
+
+def test_render_confusion_matrix_shows_off_diagonal_mass():
+    matrix = ConfusionMatrix()
+    matrix.record(intended_tool="tool_a", actual_tool="tool_a")
+    matrix.record(intended_tool="tool_a", actual_tool="tool_b")
+    matrix.record(intended_tool="tool_b", actual_tool="tool_b")
+    matrix.trials_per_tool = {"tool_a": 2, "tool_b": 1}
+    matrix.distinct_trials = {"tool_a": 2, "tool_b": 1}
+
+    report = render_confusion_matrix(matrix)
+
+    assert "Confusion Matrix" in report
+    assert "| tool_a | 1 | 1 |" in report
+    assert "| tool_b | 0 | 1 |" in report
+
+
+def test_render_confusion_matrix_notes_collided_trials():
+    matrix = ConfusionMatrix()
+    matrix.record(intended_tool="tool_a", actual_tool="tool_a")
+    matrix.trials_per_tool = {"tool_a": 3}
+    matrix.distinct_trials = {"tool_a": 2}  # collision: fewer distinct than total
+
+    report = render_confusion_matrix(matrix)
+
+    assert "2/3 distinct" in report
+    assert "some seeds sampled identical arguments" in report
+
+
+def test_render_confusion_matrix_includes_warnings():
+    matrix = ConfusionMatrix()
+    matrix.record(intended_tool="tool_a", actual_tool="tool_a")
+    matrix.trials_per_tool = {"tool_a": 1}
+    matrix.distinct_trials = {"tool_a": 1}
+    matrix.leakage_warnings = ["tool_a (seed 1): 'leaked text'"]
+    matrix.solvability_warnings = ["tool_a (seed 1): ambiguous reasoning"]
+
+    report = render_confusion_matrix(matrix)
+
+    assert "Leakage Warnings" in report
+    assert "Solvability Warnings" in report
+    assert "leaked text" in report
+
+
+def test_render_confusion_matrix_includes_schema_warnings():
+    matrix = ConfusionMatrix()
+    matrix.record(intended_tool="tool_a", actual_tool="tool_a")
+    matrix.trials_per_tool = {"tool_a": 1}
+    matrix.distinct_trials = {"tool_a": 1}
+    matrix.schema_warnings = ["tool_a: excluded from scoring — unsupported $ref construct"]
+
+    report = render_confusion_matrix(matrix)
+
+    assert "Schema Warnings" in report
+    assert "excluded from scoring" in report
