@@ -211,6 +211,15 @@ def test_openai_adapter_defaults_to_its_class_model_constant():
     assert adapter.model == OpenAIAdapter.MODEL
 
 
+def test_build_adapter_raises_a_clear_error_when_anthropic_key_is_missing(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    try:
+        build_adapter("claude-sonnet-5")
+        assert False, "expected RuntimeError"
+    except RuntimeError as e:
+        assert "ANTHROPIC_API_KEY" in str(e)
+
+
 def test_build_adapter_raises_a_clear_error_when_openai_key_is_missing(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     try:

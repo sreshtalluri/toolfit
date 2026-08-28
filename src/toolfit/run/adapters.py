@@ -144,6 +144,8 @@ def build_adapter(model: str) -> ModelAdapter:
     error instead of a raw SDK traceback."""
     provider = infer_provider(model)
     if provider == "anthropic":
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            raise RuntimeError(f"ANTHROPIC_API_KEY is not set — required to run model {model!r}")
         return AnthropicAdapter(anthropic.Anthropic(), model=model)
     if provider == "openai":
         if not os.environ.get("OPENAI_API_KEY"):
