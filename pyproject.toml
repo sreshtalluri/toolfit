@@ -1,0 +1,29 @@
+[project]
+name = "toolfit"
+version = "0.0.1"
+description = "Finds the specific places your MCP server confuses models, and proves a fix with a before-and-after eval."
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = [
+    "mcp>=2.0,<3",
+    "anthropic>=0.40",
+    "openai>=1.50",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/toolfit"]

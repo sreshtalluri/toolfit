@@ -1,0 +1,93 @@
+"""Minimal model-under-test adapters. Spike scope: Anthropic (primary). OpenRouter is added in
+Task 9 as a compatibility check only, per design doc Next Steps #1. No retry/backoff or
+concurrency here — those are explicit M2 requirements (Engineering Requirements #1, #2 in the
+design doc), out of scope for a single-server, single-request spike.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from dataclasses import dataclass
+from typing import Protocol
+
+import anthropic
+from mcp.types import Tool
+
+
+@dataclass
+class ToolCall:
+    tool_name: str | None  # None means the model made no tool call at all
+    arguments: dict
+
+
+class ModelAdapter(Protocol):
+    def call_with_tools(self, *, task_text: str, tools: list[Tool]) -> ToolCall: ...
+
+
+def _tool_to_anthropic_schema(tool: Tool) -> dict:
+    return {
+        "name": tool.name,
+        "description": tool.description or "",
+        "input_schema": tool.input_schema,
+    }
+
+
+class AnthropicAdapter:
+    MODEL = "claude-sonnet-5"
+
+    def __init__(self, client: anthropic.Anthropic):
+        self._client = client
+
+    def call_with_tools(self, *, task_text: str, tools: list[Tool]) -> ToolCall:
+        response = self._client.messages.create(
+            model=self.MODEL,
+            max_tokens=2000,
+            tools=[_tool_to_anthropic_schema(t) for t in tools],
+            messages=[{"role": "user", "content": task_text}],
+        )
+        for block in response.content:
+            if block.type == "tool_use":
+                return ToolCall(tool_name=block.name, arguments=block.input)
+        if response.stop_reason == "max_tokens":
+            # Sonnet 5 runs adaptive thinking by default and thinking tokens count against
+            # max_tokens — if we truncate before a tool_use block appears, falling through to
+            # the no-call return below is indistinguishable from a real model failure to
+            # grade() (it scores no_call=True either way). That can manufacture a false
+            # "IMPROVED" mutation result (a truncated "before" + a clean "after" looks like
+            # improvement that never happened). Surface it loudly instead of miscounting it
+            # silently. Not restructuring ToolCall/GradeResult to add a real "truncated" state
+            # here — that's a separate, out-of-scope concern.
+            print(
+                "WARNING: response truncated at max_tokens before a tool_use block was found",
+                file=sys.stderr,
+            )
+        return ToolCall(tool_name=None, arguments={})
+
+
+class OpenRouterAdapter:
+    """Compatibility check adapter (design doc Next Steps #1, TODO 4 — validates OpenRouter's
+    tool-call behavior before M2 commits to it as a full third adapter). Uses OpenRouter's
+    OpenAI-compatible API, not a bespoke client."""
+
+    def __init__(self, client, model: str):
+        self._client = client  # an openai.OpenAI configured with base_url="https://openrouter.ai/api/v1"
+        self._model = model
+
+    def call_with_tools(self, *, task_text: str, tools: list[Tool]) -> ToolCall:
+        response = self._client.chat.completions.create(
+            model=self._model,
+            messages=[{"role": "user", "content": task_text}],
+            tools=[
+                {
+                    "type": "function",
+                    "function": {"name": t.name, "description": t.description or "", "parameters": t.input_schema},
+                }
+                for t in tools
+            ],
+        )
+        message = response.choices[0].message
+        if message.tool_calls:
+            call = message.tool_calls[0]
+            return ToolCall(tool_name=call.function.name, arguments=json.loads(call.function.arguments))
+        return ToolCall(tool_name=None, arguments={})
