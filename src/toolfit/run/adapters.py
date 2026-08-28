@@ -75,11 +75,14 @@ class OpenRouterAdapter:
 
     def __init__(self, client, model: str):
         self._client = client  # an openai.OpenAI configured with base_url="https://openrouter.ai/api/v1"
-        self._model = model
+        # Public, matching AnthropicAdapter.model: report renderers read the model under test off
+        # the adapter (build_confusion_matrix's `getattr(adapter, "model", ...)`), so a private
+        # `_model` here would silently label every OpenRouter run's metadata "unknown".
+        self.model = model
 
     def call_with_tools(self, *, task_text: str, tools: list[Tool]) -> ToolCall:
         response = self._client.chat.completions.create(
-            model=self._model,
+            model=self.model,
             messages=[{"role": "user", "content": task_text}],
             tools=[
                 {

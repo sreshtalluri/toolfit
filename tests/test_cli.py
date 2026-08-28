@@ -31,5 +31,10 @@ def test_eval_requires_server_path_argument():
 def test_eval_reports_a_clear_error_for_an_unreachable_server():
     result = runner.invoke(app, ["eval", "/nonexistent/path/to/server.py"])
     assert result.exit_code != 0
-    # Should be a clear, plain-text connection error, not a raw Python traceback in the output.
-    assert "Traceback" not in result.output
+    # Assert the handled message is actually emitted, and that the command exited via typer.Exit
+    # rather than propagating the raw connection exception. Checking only `"Traceback" not in
+    # result.output` would pass even with no error handling at all, because CliRunner captures an
+    # unhandled exception into result.exception and leaves result.output empty.
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "Could not connect to server" in result.output
+    assert "/nonexistent/path/to/server.py" in result.output

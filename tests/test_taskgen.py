@@ -71,3 +71,20 @@ def test_has_identifier_argument_false_for_a_creation_tool_with_a_foreign_key():
 
 def test_has_identifier_argument_still_true_for_a_genuine_update_tool():
     assert _has_identifier_argument({"task_id": "t1", "title": "X"}, tool_name="update_task")
+
+
+def test_creation_verb_skip_matches_whole_words_not_prefixes():
+    # "address_book_update" starts with "add" and "newsletter_unsubscribe" starts with "new", but
+    # both are genuine modify-shaped tools that must KEEP the identifier guidance. A prefix match
+    # on the short creation verbs would wrongly suppress it.
+    args = {"id": "x1", "title": "X"}
+    assert _has_identifier_argument(args, tool_name="address_book_update")
+    assert _has_identifier_argument(args, tool_name="newsletter_unsubscribe")
+    assert _has_identifier_argument(args, tool_name="insertion_point_move")
+
+
+def test_creation_verb_skip_handles_camel_case_and_upper_case_tool_names():
+    args = {"task_id": "t1", "remind_at": "2026-01-01"}
+    assert not _has_identifier_argument(args, tool_name="createReminder")
+    assert not _has_identifier_argument(args, tool_name="CREATE_REMINDER")
+    assert not _has_identifier_argument(args, tool_name="schedule-reminder")

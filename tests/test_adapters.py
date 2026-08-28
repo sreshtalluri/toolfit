@@ -157,3 +157,12 @@ def test_anthropic_adapter_defaults_to_the_class_model():
     adapter.call_with_tools(task_text="hi", tools=[])
 
     assert captured["model"] == AnthropicAdapter.MODEL
+
+
+def test_every_adapter_exposes_a_public_model_attribute():
+    # build_confusion_matrix records run metadata via `getattr(adapter, "model", "unknown")`, so an
+    # adapter that keeps its model private silently labels the whole report's model "unknown".
+    from toolfit.run.adapters import OpenRouterAdapter
+
+    assert AnthropicAdapter(_FakeAnthropicClient(None), model="claude-opus-5").model == "claude-opus-5"
+    assert OpenRouterAdapter(None, model="openai/gpt-4o").model == "openai/gpt-4o"

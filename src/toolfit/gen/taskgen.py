@@ -8,6 +8,7 @@ this sampled tuple — never against the generator's opinion.
 
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import dataclass
 
@@ -36,7 +37,21 @@ ONE tool the assistant should call? Reply with exactly one line: either "SOLVABL
 "AMBIGUOUS", followed by a colon and a one-sentence reason."""
 
 
-_CREATION_VERBS = ("create", "add", "new", "schedule", "insert", "make")
+_CREATION_VERBS = frozenset({"create", "add", "new", "schedule", "insert", "make"})
+
+
+def _leading_word(tool_name: str) -> str:
+    """First whole word of a tool name, for snake_case, kebab-case, dotted and camelCase names.
+
+    Matched as a whole word rather than a prefix on purpose: a bare `startswith` on short verbs
+    like "add"/"new" also swallows unrelated tools such as `address_book_update` and
+    `newsletter_unsubscribe`, silently stripping the identifier guidance from genuine update-shaped
+    tools — the mirror image of the bug the creation-verb skip exists to fix."""
+    head = re.split(r"[^A-Za-z0-9]+", tool_name.strip("_-. "))[0]
+    if not head or head.isupper():  # "", "CREATE_TASK" -> no camelCase boundary to find
+        return head.lower()
+    camel = re.match(r"[A-Za-z][a-z0-9]*", head)  # "createReminder" -> "create"
+    return camel.group(0).lower() if camel else head.lower()
 
 
 def _has_identifier_argument(arguments: dict, tool_name: str = "") -> bool:
@@ -51,7 +66,7 @@ def _has_identifier_argument(arguments: dict, tool_name: str = "") -> bool:
     guidance would corrupt the generated task in exactly the way this heuristic exists to prevent
     for genuine update-shaped tools. `tool_name` is never sent to the model here — it's used only
     for this internal branch decision."""
-    if any(tool_name.lower().startswith(verb) for verb in _CREATION_VERBS):
+    if _leading_word(tool_name) in _CREATION_VERBS:
         return False
     return any(key == "id" or key.endswith("_id") for key in arguments)
 
