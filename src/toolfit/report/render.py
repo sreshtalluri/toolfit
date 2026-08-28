@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from toolfit.connect.client import ToolCatalog
 from toolfit.fix.fixer import ProposedFix
 from toolfit.gen.taskgen import GeneratedTask
 from toolfit.grade.confusion import HALLUCINATED, NO_CALL, ConfusionMatrix
 from toolfit.grade.mutator import MutationResult, MutationTrialResult
 from toolfit.grade.significance import wilson_interval
+from toolfit.lint.rules import LintFinding
 from toolfit.run.adapters import ToolCall
 
 
@@ -146,4 +148,26 @@ def render_mutation_results(results: list[MutationTrialResult]) -> str:
             f"- p-value: {r.p_value:.4f}",
             f"- Verdict (Bonferroni-corrected): {verdict}",
         ]
+    return "\n".join(lines)
+
+
+def render_lint_report(catalog: ToolCatalog, findings: list[LintFinding]) -> str:
+    """Markdown report for `scan` (design doc M0 Design) — a findings list with a count, never a
+    numeric/letter grade, matching the credibility-first stance already established for `eval`."""
+    lines = ["# toolfit scan report", ""]
+    if not findings:
+        lines.append(f"No findings across {len(catalog.tools)} tool(s).")
+        return "\n".join(lines)
+
+    lines.append(f"{len(findings)} finding(s) across {len(catalog.tools)} tool(s).")
+
+    by_rule: dict[str, list[LintFinding]] = {}
+    for finding in findings:
+        by_rule.setdefault(finding.rule_id, []).append(finding)
+
+    for rule_id in sorted(by_rule):
+        lines += ["", f"## {rule_id}"]
+        for finding in by_rule[rule_id]:
+            lines.append(f"- {finding.message}")
+
     return "\n".join(lines)

@@ -1,9 +1,13 @@
+from mcp.types import Tool
+
+from toolfit.connect.client import ToolCatalog
 from toolfit.fix.fixer import ProposedFix
 from toolfit.gen.taskgen import GeneratedTask
 from toolfit.grade.confusion import ConfusionMatrix, TrialRecord
 from toolfit.grade.grader import GradeResult
 from toolfit.grade.mutator import MutationResult
-from toolfit.report.render import render_confusion_matrix, render_spike_report
+from toolfit.lint.rules import LintFinding
+from toolfit.report.render import render_confusion_matrix, render_lint_report, render_spike_report
 from toolfit.run.adapters import ToolCall
 
 
@@ -251,3 +255,37 @@ def test_render_mutation_results_shows_not_significant_when_correction_rejects_i
     report = render_mutation_results([result])
 
     assert "not significant" in report
+
+
+def test_render_lint_report_shows_no_findings_message_for_a_clean_catalog():
+    catalog = ToolCatalog(
+        tools=[Tool(name="tool_a", description="Does A.", input_schema={"type": "object", "properties": {}})]
+    )
+    report = render_lint_report(catalog, [])
+    assert "No findings across 1 tool(s)." in report
+
+
+def test_render_lint_report_groups_findings_by_rule():
+    catalog = ToolCatalog(
+        tools=[
+            Tool(name="tool_a", description=None, input_schema={"type": "object", "properties": {}}),
+            Tool(name="tool_b", description="Add a new task.", input_schema={"type": "object", "properties": {}}),
+            Tool(name="tool_c", description="Add a new task.", input_schema={"type": "object", "properties": {}}),
+        ]
+    )
+    findings = [
+        LintFinding(rule_id="missing_description", tool_name="tool_a", message="tool_a has no description"),
+        LintFinding(
+            rule_id="duplicate_description",
+            tool_name=None,
+            message="tool_b, tool_c share the identical description 'Add a new task.'",
+        ),
+    ]
+
+    report = render_lint_report(catalog, findings)
+
+    assert "2 finding(s) across 3 tool(s)." in report
+    assert "## duplicate_description" in report
+    assert "## missing_description" in report
+    assert "tool_a has no description" in report
+    assert "tool_b, tool_c share the identical description" in report
