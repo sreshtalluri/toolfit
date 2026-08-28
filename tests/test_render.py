@@ -1,6 +1,6 @@
 from toolfit.fix.fixer import ProposedFix
 from toolfit.gen.taskgen import GeneratedTask
-from toolfit.grade.confusion import ConfusionMatrix
+from toolfit.grade.confusion import ConfusionMatrix, TrialRecord
 from toolfit.grade.grader import GradeResult
 from toolfit.grade.mutator import MutationResult
 from toolfit.report.render import render_confusion_matrix, render_spike_report
@@ -176,3 +176,36 @@ def test_render_confusion_matrix_includes_metadata():
     report = render_confusion_matrix(matrix)
     assert "Model under test: claude-sonnet-5" in report
     assert "Seeds per tool: 5" in report
+
+
+def test_render_confusion_matrix_includes_pass_rates_with_confidence_interval():
+    matrix = ConfusionMatrix()
+    matrix.record(intended_tool="tool_a", actual_tool="tool_a")
+    matrix.record(intended_tool="tool_a", actual_tool="tool_a")
+    matrix.trials_per_tool = {"tool_a": 2}
+    matrix.distinct_trials = {"tool_a": 2}
+    matrix.trials_by_tool = {
+        "tool_a": [
+            TrialRecord(task=GeneratedTask(text="x", tool_name="tool_a", arguments={}), passed=True),
+            TrialRecord(task=GeneratedTask(text="y", tool_name="tool_a", arguments={}), passed=False),
+        ]
+    }
+
+    report = render_confusion_matrix(matrix)
+
+    assert "## Pass Rates" in report
+    assert "tool_a: 1/2 (50%)" in report
+    assert "95% CI" in report
+
+
+def test_render_confusion_matrix_omits_pass_rates_section_when_no_trial_data_is_present():
+    # Matches the existing hand-built ConfusionMatrix() fixtures used elsewhere in this file,
+    # which set counts/trials_per_tool/distinct_trials directly without trials_by_tool.
+    matrix = ConfusionMatrix()
+    matrix.record(intended_tool="tool_a", actual_tool="tool_a")
+    matrix.trials_per_tool = {"tool_a": 1}
+    matrix.distinct_trials = {"tool_a": 1}
+
+    report = render_confusion_matrix(matrix)
+
+    assert "## Pass Rates" not in report

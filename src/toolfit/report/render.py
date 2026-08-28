@@ -6,6 +6,7 @@ from toolfit.fix.fixer import ProposedFix
 from toolfit.gen.taskgen import GeneratedTask
 from toolfit.grade.confusion import HALLUCINATED, NO_CALL, ConfusionMatrix
 from toolfit.grade.mutator import MutationResult
+from toolfit.grade.significance import wilson_interval
 from toolfit.run.adapters import ToolCall
 
 
@@ -90,6 +91,18 @@ def render_confusion_matrix(matrix: ConfusionMatrix) -> str:
         total = matrix.trials_per_tool[tool]
         note = " (some seeds sampled identical arguments)" if distinct < total else ""
         lines.append(f"- {tool}: {distinct}/{total} distinct{note}")
+
+    pass_rate_lines: list[str] = []
+    for tool in tools:
+        trials = matrix.trials_by_tool.get(tool, [])
+        if not trials:
+            continue
+        passed = sum(1 for t in trials if t.passed)
+        total = len(trials)
+        lo, hi = wilson_interval(passed, total)
+        pass_rate_lines.append(f"- {tool}: {passed}/{total} ({passed / total:.0%}), 95% CI [{lo:.0%}, {hi:.0%}]")
+    if pass_rate_lines:
+        lines += ["", "## Pass Rates"] + pass_rate_lines
 
     if matrix.leakage_warnings:
         lines += ["", "## Leakage Warnings"] + [f"- {w}" for w in matrix.leakage_warnings]
