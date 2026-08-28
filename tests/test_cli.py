@@ -38,3 +38,18 @@ def test_eval_reports_a_clear_error_for_an_unreachable_server():
     assert result.exception is None or isinstance(result.exception, SystemExit)
     assert "Could not connect to server" in result.output
     assert "/nonexistent/path/to/server.py" in result.output
+
+
+def test_eval_help_shows_mutate_option():
+    result = runner.invoke(app, ["eval", "--help"])
+    assert result.exit_code == 0
+    assert "--mutate" in result.output
+
+
+def test_eval_rejects_a_malformed_mutate_spec_before_connecting_to_any_server():
+    # No colon in the spec — this must fail on parsing alone, before ever attempting to reach
+    # the (nonexistent) server, so the error message is about the flag, not a connection failure.
+    result = runner.invoke(app, ["eval", "/nonexistent/path/to/server.py", "--mutate", "no-colon-here"])
+    assert result.exit_code != 0
+    assert "must be of the form 'tool_name:new description'" in result.output
+    assert "Could not connect to server" not in result.output
