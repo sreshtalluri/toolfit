@@ -11,7 +11,7 @@ import anthropic
 
 from toolfit.connect.client import ToolCatalog
 from toolfit.gen.schema_sampler import count_distinct, sample_arguments
-from toolfit.gen.taskgen import GENERATOR_MODEL, check_no_leakage, check_solvability, generate_task
+from toolfit.gen.taskgen import GENERATOR_MODEL, GeneratedTask, check_no_leakage, check_solvability, generate_task
 from toolfit.grade.grader import grade
 from toolfit.run.adapters import ModelAdapter
 
@@ -20,10 +20,17 @@ HALLUCINATED = "(hallucinated)"
 
 
 @dataclass
+class TrialRecord:
+    task: GeneratedTask
+    passed: bool
+
+
+@dataclass
 class ConfusionMatrix:
     counts: dict[str, dict[str, int]] = field(default_factory=dict)
     distinct_trials: dict[str, int] = field(default_factory=dict)
     trials_per_tool: dict[str, int] = field(default_factory=dict)
+    trials_by_tool: dict[str, list[TrialRecord]] = field(default_factory=dict)
     solvability_warnings: list[str] = field(default_factory=list)
     leakage_warnings: list[str] = field(default_factory=list)
     schema_warnings: list[str] = field(default_factory=list)
@@ -59,6 +66,7 @@ def build_confusion_matrix(
         # partial tool with no matching trials_per_tool/distinct_trials entry, which is exactly
         # what makes render_confusion_matrix's `matrix.distinct_trials[tool]` raise KeyError.
         pending_records: list[tuple[str, str]] = []
+        pending_trials: list[TrialRecord] = []
         try:
             for seed in range(1, seeds + 1):
                 args = sample_arguments(tool.input_schema, seed=seed)
@@ -87,11 +95,13 @@ def build_confusion_matrix(
                 else:
                     actual = call.tool_name
                 pending_records.append((tool.name, actual))
+                pending_trials.append(TrialRecord(task=task, passed=result.passed))
 
             for intended_tool, actual_tool in pending_records:
                 matrix.record(intended_tool=intended_tool, actual_tool=actual_tool)
             matrix.trials_per_tool[tool.name] = seeds
             matrix.distinct_trials[tool.name] = count_distinct(sampled_args)
+            matrix.trials_by_tool[tool.name] = pending_trials
         except ValueError as e:
             # Failure Modes (design doc, docs/designs/toolfit-v0-scope.md:103): a malformed schema
             # on one tool must not abort the whole run — flag it and exclude it from scoring,

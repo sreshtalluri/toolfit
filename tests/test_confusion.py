@@ -145,3 +145,34 @@ def test_build_confusion_matrix_records_run_metadata():
     matrix = build_confusion_matrix(CATALOG, _AlwaysToolAAdapter(), _fake_generator_client(), seeds=2)
     assert matrix.seeds == 2
     assert matrix.generator_model
+
+
+def test_build_confusion_matrix_records_paired_trials_for_mutation_testing():
+    matrix = build_confusion_matrix(CATALOG, _AlwaysToolAAdapter(), _fake_generator_client(), seeds=2)
+
+    assert len(matrix.trials_by_tool["tool_a"]) == 2
+    for trial in matrix.trials_by_tool["tool_a"]:
+        assert trial.task.tool_name == "tool_a"  # ground truth, not what was actually called
+        assert trial.passed is True  # _AlwaysToolAAdapter always gets tool_a's own tasks right
+
+    assert len(matrix.trials_by_tool["tool_b"]) == 2
+    for trial in matrix.trials_by_tool["tool_b"]:
+        assert trial.task.tool_name == "tool_b"
+        assert trial.passed is False  # tool_b's tasks got misrouted to tool_a
+
+
+def test_build_confusion_matrix_excludes_a_broken_tool_from_trials_by_tool_too():
+    broken_schema = {
+        "type": "object",
+        "properties": {"thing": {"$ref": "#/definitions/Thing"}},
+        "required": ["thing"],
+    }
+    catalog = ToolCatalog(
+        tools=[
+            Tool(name="tool_a", description="Does A.", inputSchema=_SIMPLE_SCHEMA),
+            Tool(name="tool_broken", description="Has a bad schema.", inputSchema=broken_schema),
+        ]
+    )
+    matrix = build_confusion_matrix(catalog, _AlwaysToolAAdapter(), _fake_generator_client(), seeds=2)
+    assert "tool_a" in matrix.trials_by_tool
+    assert "tool_broken" not in matrix.trials_by_tool
