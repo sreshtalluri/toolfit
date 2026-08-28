@@ -280,3 +280,104 @@ def test_eval_still_requires_explicit_subcommand_name_alongside_scan():
     result = runner.invoke(app, ["eval", "--help"])
     assert result.exit_code == 0
     assert "SERVER_PATH" in result.output or "server_path" in result.output
+
+
+def test_scan_strict_exits_one_when_findings_exist():
+    result = runner.invoke(app, ["scan", "--strict", "examples/toy_server.py"])
+    assert result.exit_code == 1
+    assert "--strict" in result.output
+    assert "finding(s)" in result.output
+
+
+def test_scan_without_strict_still_exits_zero_when_findings_exist():
+    result = runner.invoke(app, ["scan", "examples/toy_server.py"])
+    assert result.exit_code == 0
+
+
+def test_eval_strict_exits_one_when_a_tools_pass_rate_is_below_threshold(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+
+    async def fake_fetch_catalog(params):
+        return ToolCatalog(tools=[Tool(name="tool_a", description="Does A.", input_schema=_SIMPLE_SCHEMA)])
+
+    matrix = ConfusionMatrix(
+        counts={"tool_a": {"tool_a": 1}},
+        distinct_trials={"tool_a": 2},
+        trials_per_tool={"tool_a": 2},
+        trials_by_tool={
+            "tool_a": [
+                TrialRecord(task=GeneratedTask(text="t1", tool_name="tool_a", arguments={}), passed=True),
+                TrialRecord(task=GeneratedTask(text="t2", tool_name="tool_a", arguments={}), passed=False),
+            ]
+        },
+        model="gpt-5.5",
+        generator_model="claude-sonnet-5",
+        seeds=2,
+    )
+
+    monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
+    monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds: matrix)
+
+    result = runner.invoke(app, ["eval", "somepath", "--strict"])
+
+    assert result.exit_code == 1
+    assert "tool_a" in result.output
+    assert "--strict" in result.output
+
+
+def test_eval_strict_exits_zero_when_every_tools_pass_rate_meets_the_threshold(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+
+    async def fake_fetch_catalog(params):
+        return ToolCatalog(tools=[Tool(name="tool_a", description="Does A.", input_schema=_SIMPLE_SCHEMA)])
+
+    matrix = ConfusionMatrix(
+        counts={"tool_a": {"tool_a": 2}},
+        distinct_trials={"tool_a": 2},
+        trials_per_tool={"tool_a": 2},
+        trials_by_tool={
+            "tool_a": [
+                TrialRecord(task=GeneratedTask(text="t1", tool_name="tool_a", arguments={}), passed=True),
+                TrialRecord(task=GeneratedTask(text="t2", tool_name="tool_a", arguments={}), passed=True),
+            ]
+        },
+        model="gpt-5.5",
+        generator_model="claude-sonnet-5",
+        seeds=2,
+    )
+
+    monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
+    monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds: matrix)
+
+    result = runner.invoke(app, ["eval", "somepath", "--strict"])
+
+    assert result.exit_code == 0
+
+
+def test_eval_without_strict_exits_zero_regardless_of_pass_rate(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+
+    async def fake_fetch_catalog(params):
+        return ToolCatalog(tools=[Tool(name="tool_a", description="Does A.", input_schema=_SIMPLE_SCHEMA)])
+
+    matrix = ConfusionMatrix(
+        counts={"tool_a": {"tool_a": 0}},
+        distinct_trials={"tool_a": 1},
+        trials_per_tool={"tool_a": 1},
+        trials_by_tool={
+            "tool_a": [TrialRecord(task=GeneratedTask(text="t1", tool_name="tool_a", arguments={}), passed=False)]
+        },
+        model="gpt-5.5",
+        generator_model="claude-sonnet-5",
+        seeds=1,
+    )
+
+    monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
+    monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds: matrix)
+
+    result = runner.invoke(app, ["eval", "somepath"])
+
+    assert result.exit_code == 0

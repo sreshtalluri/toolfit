@@ -44,22 +44,39 @@ def eval(
         help="Write a static SVG badge (toolfit-badge.svg) summarizing the overall pass rate, or "
         "a before/after delta if exactly one --mutate was tested.",
     ),
+    strict: bool = typer.Option(
+        False, "--strict", help="Exit with code 1 if any tool's pass rate falls below --strict-threshold."
+    ),
+    strict_threshold: float = typer.Option(
+        0.9, "--strict-threshold", help="Minimum acceptable per-tool pass rate when --strict is set."
+    ),
 ) -> None:
     """Build and print a confusion matrix for the given MCP server, optionally testing description
     mutations against it."""
-    asyncio.run(_run_eval(server_path, seeds=seeds, model=model, mutate=mutate, badge=badge))
+    asyncio.run(
+        _run_eval(
+            server_path,
+            seeds=seeds,
+            model=model,
+            mutate=mutate,
+            badge=badge,
+            strict=strict,
+            strict_threshold=strict_threshold,
+        )
+    )
 
 
 @app.command()
 def scan(
     server_path: str = typer.Argument(..., help="Path to a local stdio MCP server script."),
+    strict: bool = typer.Option(False, "--strict", help="Exit with code 1 if any lint finding exists."),
 ) -> None:
     """Run free, static lint checks against the given MCP server's tool catalog. Makes no model
     calls and needs no API key."""
-    asyncio.run(_run_scan(server_path))
+    asyncio.run(_run_scan(server_path, strict=strict))
 
 
-async def _run_scan(server_path: str) -> None:
+async def _run_scan(server_path: str, *, strict: bool) -> None:
     params = server_params(server_path)
     try:
         catalog = await fetch_catalog(params)
@@ -71,6 +88,10 @@ async def _run_scan(server_path: str) -> None:
     findings = run_lint(catalog)
     print(render_lint_report(catalog, findings))
 
+    if strict and findings:
+        typer.echo(f"--strict: {len(findings)} finding(s) present", err=True)
+        raise typer.Exit(code=1)
+
 
 def _parse_mutation(spec: str) -> tuple[str, str]:
     if ":" not in spec:
@@ -79,7 +100,16 @@ def _parse_mutation(spec: str) -> tuple[str, str]:
     return tool_name.strip(), new_description.strip()
 
 
-async def _run_eval(server_path: str, *, seeds: int, model: str, mutate: list[str], badge: bool) -> None:
+async def _run_eval(
+    server_path: str,
+    *,
+    seeds: int,
+    model: str,
+    mutate: list[str],
+    badge: bool,
+    strict: bool,
+    strict_threshold: float,
+) -> None:
     # Parse --mutate specs before any I/O — a malformed flag should fail fast, not after
     # spending time connecting to a server that was never going to matter.
     parsed_mutations: list[tuple[str, str]] = []
@@ -163,6 +193,21 @@ async def _run_eval(server_path: str, *, seeds: int, model: str, mutate: list[st
         with open("toolfit-badge.svg", "w") as f:
             f.write(svg)
         typer.echo("Wrote badge to toolfit-badge.svg", err=True)
+
+    if strict:
+        below_threshold = []
+        for tool_name, trials in matrix.trials_by_tool.items():
+            passed = sum(1 for t in trials if t.passed)
+            rate = passed / len(trials)
+            if rate < strict_threshold:
+                below_threshold.append(f"{tool_name} ({rate:.0%})")
+        if below_threshold:
+            typer.echo(
+                f"--strict: {len(below_threshold)} tool(s) below {strict_threshold:.0%} pass rate: "
+                f"{', '.join(sorted(below_threshold))}",
+                err=True,
+            )
+            raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
