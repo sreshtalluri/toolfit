@@ -15,7 +15,7 @@ _EXAMPLES: dict[str, list[str]] = {
     "title": ["Write Q3 report", "Fix login bug", "Book dentist appointment"],
     "priority": ["high", "medium", "low"],
     "task_id": ["t1", "t2", "t3"],
-    "status": ["open", "done"],
+    "status": ["open", "in_progress", "done"],
 }
 
 
@@ -42,3 +42,14 @@ def sample_arguments(schema: dict, *, seed: int) -> dict[str, str]:
             raise ValueError(f"sample_arguments: no example values registered for property {prop_name!r}")
         result[prop_name] = rng.choice(choices)
     return result
+
+
+def count_distinct(arg_sets: list[dict[str, str]]) -> int:
+    """How many of the given argument sets are actually distinct.
+
+    Small example pools mean seeds can collide onto the same sampled arguments (design doc Open
+    Questions: this happened with the original 2-value `status` pool). Rather than trying to
+    engineer around every possible collision, the trial loop reports this honestly — "n=8, but
+    only 5 distinct" — instead of presenting a collided trial as independent evidence.
+    """
+    return len({tuple(sorted(args.items())) for args in arg_sets})

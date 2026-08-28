@@ -12,7 +12,7 @@ import anthropic
 
 from toolfit.connect.client import fetch_catalog, server_params
 from toolfit.fix.fixer import propose_fix
-from toolfit.gen.schema_sampler import sample_arguments
+from toolfit.gen.schema_sampler import count_distinct, sample_arguments
 from toolfit.gen.taskgen import check_no_leakage, check_solvability, generate_task
 from toolfit.grade.mutator import run_mutation_test
 from toolfit.report.render import render_spike_report
@@ -44,7 +44,7 @@ async def main() -> None:
     # A single binary paired observation against a nondeterministic model can't distinguish
     # signal from noise (design doc: "every metric with n, seeds, CI") — run the full chain
     # across several seeds instead of just one.
-    seeds = [1, 2, 3]
+    seeds = list(range(1, 9))
 
     # Fix proposal doesn't depend on the sampled task/seed, so it only runs once, outside the
     # loop, and the same proposed (or rejected-and-unchanged) description is measured against
@@ -59,9 +59,11 @@ async def main() -> None:
 
     before_passed_count = 0
     after_passed_count = 0
+    all_sampled_args: list[dict[str, str]] = []
 
     for seed in seeds:
         args = sample_arguments(target.input_schema, seed=seed)
+        all_sampled_args.append(args)
         task = generate_task(
             anthropic_client,
             tool_name=TARGET_TOOL,
@@ -115,7 +117,9 @@ async def main() -> None:
             )
         )
 
+    distinct = count_distinct(all_sampled_args)
     print(f"\n## Aggregate (N={len(seeds)} trials)")
+    print(f"- Distinct trials: {distinct}/{len(seeds)}" + (" (some seeds sampled identical arguments — treat the effective n as this, not N)" if distinct < len(seeds) else ""))
     print(f"- Before passed: {before_passed_count}/{len(seeds)}")
     print(f"- After passed: {after_passed_count}/{len(seeds)}")
 

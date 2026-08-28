@@ -1,6 +1,6 @@
 import pytest
 
-from toolfit.gen.schema_sampler import sample_arguments
+from toolfit.gen.schema_sampler import count_distinct, sample_arguments
 
 CREATE_TASK_SCHEMA = {
     "type": "object",
@@ -36,3 +36,17 @@ def test_sample_arguments_rejects_unknown_property_name():
     }
     with pytest.raises(ValueError, match="no example values registered"):
         sample_arguments(schema, seed=1)
+
+
+def test_count_distinct_counts_all_unique_sets():
+    assert count_distinct([{"status": "open"}, {"status": "done"}, {"status": "in_progress"}]) == 3
+
+
+def test_count_distinct_detects_a_collision():
+    # Two seeds landing on the same sampled arguments — exactly what happened with the
+    # 2-value status pool before it was enriched (design doc Open Questions).
+    assert count_distinct([{"status": "open"}, {"status": "open"}, {"status": "done"}]) == 2
+
+
+def test_count_distinct_of_empty_list_is_zero():
+    assert count_distinct([]) == 0
