@@ -5,9 +5,13 @@ ToolCall, and correctly returns tool_name=None when the model makes no tool call
 
 from types import SimpleNamespace
 
+import anthropic
+import httpx2
+import openai
+import pytest
 from mcp.types import Tool
 
-from toolfit.run.adapters import AnthropicAdapter, ToolCall
+from toolfit.run.adapters import AnthropicAdapter, ToolCall, _with_retry
 
 TOOLS = [
     Tool(
@@ -265,3 +269,123 @@ def test_build_adapter_raises_a_clear_error_when_openrouter_key_is_missing(monke
         assert False, "expected RuntimeError"
     except RuntimeError as e:
         assert "OPENROUTER_API_KEY" in str(e)
+
+
+def _fake_rate_limit_error(exc_class):
+    resp = httpx2.Response(status_code=429, request=httpx2.Request("POST", "https://example.com"))
+    return exc_class("rate limited", response=resp, body=None)
+
+
+def test_with_retry_succeeds_immediately_when_the_function_does_not_raise():
+    calls = []
+
+    def fn():
+        calls.append(1)
+        return "ok"
+
+    result = _with_retry(fn, sleep_fn=lambda delay: None)
+    assert result == "ok"
+    assert len(calls) == 1
+
+
+def test_with_retry_retries_on_a_rate_limit_error_then_succeeds():
+    attempts = {"count": 0}
+    sleeps = []
+
+    def fn():
+        attempts["count"] += 1
+        if attempts["count"] < 3:
+            raise _fake_rate_limit_error(anthropic.RateLimitError)
+        return "ok"
+
+    result = _with_retry(fn, max_retries=3, base_delay=0.01, sleep_fn=lambda delay: sleeps.append(delay))
+    assert result == "ok"
+    assert attempts["count"] == 3
+    assert len(sleeps) == 2
+
+
+def test_with_retry_retries_on_an_openai_rate_limit_error_then_succeeds():
+    attempts = {"count": 0}
+    sleeps = []
+
+    def fn():
+        attempts["count"] += 1
+        if attempts["count"] < 2:
+            raise _fake_rate_limit_error(openai.RateLimitError)
+        return "ok"
+
+    result = _with_retry(fn, max_retries=3, base_delay=0.01, sleep_fn=lambda delay: sleeps.append(delay))
+    assert result == "ok"
+    assert attempts["count"] == 2
+    assert len(sleeps) == 1
+
+
+def test_with_retry_reraises_after_max_retries_is_exhausted():
+    def fn():
+        raise _fake_rate_limit_error(openai.RateLimitError)
+
+    with pytest.raises(openai.RateLimitError):
+        _with_retry(fn, max_retries=2, base_delay=0.01, sleep_fn=lambda delay: None)
+
+
+def test_with_retry_never_retries_a_non_rate_limit_error():
+    calls = []
+
+    def fn():
+        calls.append(1)
+        raise ValueError("something else entirely")
+
+    with pytest.raises(ValueError):
+        _with_retry(fn, sleep_fn=lambda delay: None)
+    assert len(calls) == 1  # never retried
+
+
+def test_anthropic_adapter_retries_on_rate_limit_then_succeeds(monkeypatch):
+    monkeypatch.setattr("toolfit.run.adapters.time.sleep", lambda delay: None)
+    attempts = {"count": 0}
+    fake_success_response = SimpleNamespace(
+        content=[SimpleNamespace(type="tool_use", name="create_task", input={"title": "Buy milk", "priority": "low"})]
+    )
+
+    class _FlakyMessages:
+        def create(self, **kwargs):
+            attempts["count"] += 1
+            if attempts["count"] < 2:
+                raise _fake_rate_limit_error(anthropic.RateLimitError)
+            return fake_success_response
+
+    class _FlakyClient:
+        def __init__(self):
+            self.messages = _FlakyMessages()
+
+    adapter = AnthropicAdapter(_FlakyClient())
+    result = adapter.call_with_tools(task_text="buy milk, low priority", tools=TOOLS)
+    assert result == ToolCall(tool_name="create_task", arguments={"title": "Buy milk", "priority": "low"})
+    assert attempts["count"] == 2
+
+
+def test_openai_compatible_call_retries_on_rate_limit_then_succeeds(monkeypatch):
+    monkeypatch.setattr("toolfit.run.adapters.time.sleep", lambda delay: None)
+    attempts = {"count": 0}
+    fake_call = _FakeToolCall("create_task", json.dumps({"title": "Buy milk", "priority": "low"}))
+    fake_success_response = _FakeOpenAIResponse(choices=[_FakeOpenAIChoice(_FakeOpenAIMessage(tool_calls=[fake_call]))])
+
+    class _FlakyCompletions:
+        def create(self, **kwargs):
+            attempts["count"] += 1
+            if attempts["count"] < 2:
+                raise _fake_rate_limit_error(openai.RateLimitError)
+            return fake_success_response
+
+    class _FlakyChat:
+        def __init__(self):
+            self.completions = _FlakyCompletions()
+
+    class _FlakyClient:
+        def __init__(self):
+            self.chat = _FlakyChat()
+
+    adapter = OpenAIAdapter(_FlakyClient(), model="gpt-5.5")
+    result = adapter.call_with_tools(task_text="buy milk, low priority", tools=TOOLS)
+    assert result.tool_name == "create_task"
+    assert attempts["count"] == 2

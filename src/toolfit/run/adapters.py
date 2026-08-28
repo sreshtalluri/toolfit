@@ -1,22 +1,55 @@
 """Model-under-test adapters for all three M2 providers (design doc M2 Design §2). AnthropicAdapter
 and OpenAIAdapter are native clients; OpenRouterAdapter routes through OpenRouter's
 OpenAI-compatible endpoint and shares its call logic with OpenAIAdapter via
-_openai_compatible_call. No retry/backoff or concurrency here — build_confusion_matrix (M1) and
-run_mutation_trials (M2) both call adapters sequentially by design; concurrency (Engineering
-Requirement #1) and retry/backoff (Engineering Requirement #2) remain explicitly out of scope.
+_openai_compatible_call. build_confusion_matrix (M1) and run_mutation_trials (M2) both call
+adapters sequentially by design; concurrency (Engineering Requirement #1) remains explicitly out
+of scope. Retry/backoff (Engineering Requirement #2, design doc M3a Design §1) is handled here via
+_with_retry, which wraps only the network-call line inside call_with_tools — never the whole
+method, so parsing failures (malformed JSON, empty choices, max_tokens truncation) are never
+retried, only a genuine rate-limit response.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import random
 import sys
+import time
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Callable, Literal, Protocol, TypeVar
 
 import anthropic
 import openai
 from mcp.types import Tool
+
+T = TypeVar("T")
+
+
+def _with_retry(
+    fn: Callable[[], T],
+    *,
+    max_retries: int = 3,
+    base_delay: float = 1.0,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> T:
+    """Retry a network call on a rate-limit error only (design doc M3a Design §1) — never on a
+    parsing failure, which retrying can't fix. Exponential backoff with jitter; re-raises after
+    max_retries so a persistent outage is never silently swallowed. sleep_fn is injectable so
+    tests run instantly instead of actually sleeping."""
+    for attempt in range(max_retries + 1):
+        try:
+            return fn()
+        except (anthropic.RateLimitError, openai.RateLimitError):
+            if attempt == max_retries:
+                raise
+            delay = base_delay * (2**attempt) + random.uniform(0, base_delay)
+            print(
+                f"WARNING: rate limited, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})",
+                file=sys.stderr,
+            )
+            sleep_fn(delay)
+    raise AssertionError("unreachable")  # every loop iteration above either returns or re-raises
 
 
 @dataclass
@@ -45,11 +78,13 @@ class AnthropicAdapter:
         self.model = model or self.MODEL
 
     def call_with_tools(self, *, task_text: str, tools: list[Tool]) -> ToolCall:
-        response = self._client.messages.create(
-            model=self.model,
-            max_tokens=2000,
-            tools=[_tool_to_anthropic_schema(t) for t in tools],
-            messages=[{"role": "user", "content": task_text}],
+        response = _with_retry(
+            lambda: self._client.messages.create(
+                model=self.model,
+                max_tokens=2000,
+                tools=[_tool_to_anthropic_schema(t) for t in tools],
+                messages=[{"role": "user", "content": task_text}],
+            )
         )
         for block in response.content:
             if block.type == "tool_use":
@@ -70,16 +105,18 @@ def _openai_compatible_call(client: openai.OpenAI, *, model: str, task_text: str
     """Shared call_with_tools body for any OpenAI-function-calling-compatible provider (OpenAI
     itself, OpenRouter's OpenAI-compatible endpoint). The request/response shape is identical;
     only the client's base_url/api_key differ, which the caller already configured."""
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": task_text}],
-        tools=[
-            {
-                "type": "function",
-                "function": {"name": t.name, "description": t.description or "", "parameters": t.input_schema},
-            }
-            for t in tools
-        ],
+    response = _with_retry(
+        lambda: client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": task_text}],
+            tools=[
+                {
+                    "type": "function",
+                    "function": {"name": t.name, "description": t.description or "", "parameters": t.input_schema},
+                }
+                for t in tools
+            ],
+        )
     )
     if not response.choices:
         # An OpenAI-compatible gateway (OpenRouter in particular, since it proxies many upstream
