@@ -3,11 +3,14 @@ extensively-mocked server connection). build_confusion_matrix and render_confusi
 already tested directly with fakes in test_confusion.py and test_render.py; this just confirms
 the typer app is wired correctly.
 
-Both tests below invoke "eval" as an explicit subcommand name (`["eval", ...]`, not just
-positional args) — this only works because cli.py registers an @app.callback(). Verified
-empirically: without it, Typer collapses the single-command app so "eval" gets consumed as the
-server_path VALUE instead of the subcommand name, and these tests fail/mean something else
-(scan/fix/report don't exist yet) if that callback is ever removed — re-verify before removing it.
+Tests below invoke "eval" and "scan" as explicit subcommand names (`["eval", ...]`, not just
+positional args). Historically (single-command app, `eval` only) this required cli.py to
+register an @app.callback() — Typer otherwise collapses a single @app.command() into "no
+subcommand name needed" mode and consumes "eval" as the server_path VALUE instead of the
+subcommand name. That callback was removed once `scan` became a second registered command:
+re-verified empirically (all tests in this file still pass with the callback commented out) that
+Typer stops collapsing on its own once there are two-or-more commands — see cli.py's module
+docstring history / task-3-report.md for the experiment.
 """
 
 from types import SimpleNamespace
@@ -193,3 +196,31 @@ def test_eval_mutate_applies_bonferroni_correction_across_multiple_mutations(mon
     tool_b_block = result.output.split("### tool_b")[1]
     assert "SIGNIFICANT" in tool_a_block
     assert "not significant" in tool_b_block
+
+
+def test_scan_help_shows_server_path_argument():
+    result = runner.invoke(app, ["scan", "--help"])
+    assert result.exit_code == 0
+    assert "SERVER_PATH" in result.output or "server_path" in result.output
+
+
+def test_scan_requires_server_path_argument():
+    result = runner.invoke(app, ["scan"])
+    assert result.exit_code != 0
+
+
+def test_scan_reports_a_clear_error_for_an_unreachable_server():
+    result = runner.invoke(app, ["scan", "/nonexistent/path/to/server.py"])
+    assert result.exit_code != 0
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "Could not connect to server" in result.output
+    assert "/nonexistent/path/to/server.py" in result.output
+
+
+def test_eval_still_requires_explicit_subcommand_name_alongside_scan():
+    # Regression guard for the Typer single-command-collapse quirk this file already hit once
+    # (see this file's module docstring): now that TWO commands are registered (eval, scan),
+    # `["eval", ...]` must still work as an explicit subcommand name.
+    result = runner.invoke(app, ["eval", "--help"])
+    assert result.exit_code == 0
+    assert "SERVER_PATH" in result.output or "server_path" in result.output

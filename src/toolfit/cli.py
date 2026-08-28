@@ -1,9 +1,10 @@
 """Typer CLI: `toolfit eval <server_path>` (design doc Distribution Plan, M1 Design), extended in
-M2 with `--mutate` for paired mutation testing (design doc M2 Design §4). Only the `eval`
-subcommand exists — `scan`/`fix`/`report` per the source doc's fuller architecture come later
-(M0's static lint, M4's fix loop). `--mutate` takes a hand-supplied description and reports a
-rigorous before/after verdict on it; it never generates a candidate description itself — that
-stays M4's fix loop (design doc M2 Design, "Explicitly out of scope").
+M2 with `--mutate` for paired mutation testing (design doc M2 Design §4). `toolfit scan
+<server_path>` (M0's static lint) now also exists as a real command, running free lint checks
+with no model calls; `fix`/`report` per the source doc's fuller architecture still come later
+(M4's fix loop). `--mutate` takes a hand-supplied description and reports a rigorous before/after
+verdict on it; it never generates a candidate description itself — that stays M4's fix loop
+(design doc M2 Design, "Explicitly out of scope").
 """
 
 from __future__ import annotations
@@ -18,20 +19,11 @@ from toolfit.connect.client import fetch_catalog, server_params
 from toolfit.grade.confusion import build_confusion_matrix
 from toolfit.grade.mutator import run_mutation_trials
 from toolfit.grade.significance import bonferroni_correct
-from toolfit.report.render import render_confusion_matrix, render_mutation_results
+from toolfit.lint.rules import run_lint
+from toolfit.report.render import render_confusion_matrix, render_lint_report, render_mutation_results
 from toolfit.run.adapters import build_adapter
 
 app = typer.Typer()
-
-
-@app.callback()
-def _callback() -> None:
-    """Empty on purpose: Typer collapses a single @app.command() into "no subcommand name
-    needed" mode unless an @app.callback() is also registered (verified empirically — without
-    this, `toolfit eval <path>` wouldn't work as documented in the design doc's Distribution
-    Plan; `toolfit <path>` would work instead, which isn't what's specified). Remove once a
-    second command (scan/fix/report) exists — that's the point Typer stops collapsing on its
-    own."""
 
 
 @app.command()
@@ -49,6 +41,28 @@ def eval(
     """Build and print a confusion matrix for the given MCP server, optionally testing description
     mutations against it."""
     asyncio.run(_run_eval(server_path, seeds=seeds, model=model, mutate=mutate))
+
+
+@app.command()
+def scan(
+    server_path: str = typer.Argument(..., help="Path to a local stdio MCP server script."),
+) -> None:
+    """Run free, static lint checks against the given MCP server's tool catalog. Makes no model
+    calls and needs no API key."""
+    asyncio.run(_run_scan(server_path))
+
+
+async def _run_scan(server_path: str) -> None:
+    params = server_params(server_path)
+    try:
+        catalog = await fetch_catalog(params)
+    except Exception as e:
+        # Same Failure Modes handling as _run_eval (design doc, docs/designs/toolfit-v0-scope.md:102-104).
+        typer.echo(f"Could not connect to server at {server_path!r}: {e}", err=True)
+        raise typer.Exit(code=1)
+
+    findings = run_lint(catalog)
+    print(render_lint_report(catalog, findings))
 
 
 def _parse_mutation(spec: str) -> tuple[str, str]:
