@@ -1,8 +1,18 @@
-"""Toy MCP server for the toolfit spike — 3 tools, one intentionally ambiguous pair.
+"""Toy MCP server for the toolfit spike — 4 tools, two intentionally ambiguous pairs.
 
-create_task and update_task share the identical docstring on purpose: this is the realistic
-"copy-pasted description" bug the spike's mutation test (grade/mutator.py) is built to find
-and, via fix/fixer.py, propose a fix for.
+create_task and update_task share the identical docstring on purpose: the realistic
+"copy-pasted description" bug the spike's mutation test (grade/mutator.py) is built to find and,
+via fix/fixer.py, propose a fix for. Empirically (spike run, 2026-08-27) that pair turned out to
+have a confound: the shared text ("Add a new task.") linguistically favors create_task, and the
+generated task text tends to use "create"/"add" phrasing regardless of which tool the sampled
+arguments actually target — so a description fix and a task-phrasing bias were both moving at
+the same time, muddying the signal.
+
+count_tasks and list_tasks share a second, deliberately NEUTRAL vague description ("Get tasks by
+status.") that doesn't linguistically favor either verb ("count" vs. "list/show"), and both tools
+take the exact same argument shape (`status: str`) — isolating description ambiguity from
+task-phrasing bias, for a cleaner read on whether mutation testing produces a clean signal on
+its own.
 """
 
 from mcp.server import MCPServer
@@ -34,9 +44,16 @@ def update_task(task_id: str, title: str) -> str:
 
 @mcp.tool()
 def list_tasks(status: str) -> str:
-    """List all tasks, optionally filtered by status (open, done)."""
+    """Get tasks by status."""
     matches = [f"{tid}: {t['title']}" for tid, t in _TASKS.items() if t["status"] == status]
     return "\n".join(matches) if matches else f"No tasks with status {status!r}"
+
+
+@mcp.tool()
+def count_tasks(status: str) -> str:
+    """Get tasks by status."""
+    n = sum(1 for t in _TASKS.values() if t["status"] == status)
+    return f"{n} tasks with status {status!r}"
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ import os
 import anthropic
 import pytest
 
-from toolfit.gen.taskgen import check_no_leakage, generate_task
+from toolfit.gen.taskgen import GeneratedTask, check_no_leakage, check_solvability, generate_task
 
 pytestmark = pytest.mark.skipif(not os.environ.get("ANTHROPIC_API_KEY"), reason="requires ANTHROPIC_API_KEY")
 
@@ -49,3 +49,45 @@ def test_withheld_description_still_produces_a_usable_task(client):
     )
     assert len(task.text) > 0
     assert check_no_leakage(task, catalog_tool_names=["create_task", "update_task", "list_tasks"])
+
+
+def test_flags_the_real_ambiguous_task_the_spike_actually_produced(client):
+    # Grounded in a real spike run (2026-08-27): the generator produced this exact sentence for
+    # update_task({"task_id": "t1", "title": "Book dentist appointment"}) — it reads as a
+    # create_task request, and the model-under-test made no tool call at all for it, twice.
+    task = GeneratedTask(
+        text='Create a new task with ID t1 titled "Book dentist appointment."',
+        tool_name="update_task",
+        arguments={"task_id": "t1", "title": "Book dentist appointment"},
+    )
+    result = check_solvability(
+        client,
+        task,
+        catalog_descriptions={
+            "create_task": "Add a new task.",
+            "update_task": "Add a new task.",
+            "list_tasks": "List all tasks, optionally filtered by status (open, done).",
+        },
+    )
+    assert result.solvable is False
+
+
+def test_passes_a_clearly_solvable_task(client):
+    task = GeneratedTask(
+        text="Show me all my open tasks.",
+        tool_name="list_tasks",
+        arguments={"status": "open"},
+    )
+    result = check_solvability(
+        client,
+        task,
+        catalog_descriptions={
+            "create_task": "Add a new task.",
+            "update_task": (
+                "Modify an existing task's fields (e.g., status, title, due date) by specifying "
+                "its task ID and the values to change, rather than creating a new one."
+            ),
+            "list_tasks": "List all tasks, optionally filtered by status (open, done).",
+        },
+    )
+    assert result.solvable is True

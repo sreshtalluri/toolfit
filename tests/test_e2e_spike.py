@@ -20,7 +20,7 @@ pytestmark = pytest.mark.skipif(not os.environ.get("ANTHROPIC_API_KEY"), reason=
 async def test_full_loop_against_the_toy_server():
     params = server_params("examples/toy_server.py")
     catalog = await fetch_catalog(params)
-    assert catalog.names() == ["create_task", "update_task", "list_tasks"]
+    assert catalog.names() == ["create_task", "update_task", "list_tasks", "count_tasks"]
 
     target_tool = catalog.get("update_task")
     args = sample_arguments(target_tool.input_schema, seed=1)
