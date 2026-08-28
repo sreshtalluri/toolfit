@@ -166,3 +166,64 @@ def test_every_adapter_exposes_a_public_model_attribute():
 
     assert AnthropicAdapter(_FakeAnthropicClient(None), model="claude-opus-5").model == "claude-opus-5"
     assert OpenRouterAdapter(None, model="openai/gpt-4o").model == "openai/gpt-4o"
+
+
+from toolfit.run.adapters import OpenAIAdapter, build_adapter, infer_provider
+
+
+def test_infer_provider_recognizes_claude_models():
+    assert infer_provider("claude-sonnet-5") == "anthropic"
+    assert infer_provider("claude-opus-5") == "anthropic"
+
+
+def test_infer_provider_recognizes_openai_models():
+    assert infer_provider("gpt-5.5") == "openai"
+    assert infer_provider("o3-mini") == "openai"
+
+
+def test_infer_provider_recognizes_openrouter_models_by_slash():
+    assert infer_provider("qwen/qwen-2.5-72b-instruct") == "openrouter"
+    assert infer_provider("openai/gpt-5.5") == "openrouter"  # OpenRouter's own naming, not direct OpenAI
+
+
+def test_infer_provider_defaults_to_anthropic_for_an_unrecognized_name():
+    assert infer_provider("some-custom-finetune") == "anthropic"
+
+
+def test_openai_adapter_parses_a_tool_call():
+    fake_call = _FakeToolCall("create_task", json.dumps({"title": "Buy milk", "priority": "low"}))
+    fake_response = _FakeOpenAIResponse(choices=[_FakeOpenAIChoice(_FakeOpenAIMessage(tool_calls=[fake_call]))])
+    adapter = OpenAIAdapter(_FakeOpenAIClient(fake_response), model="gpt-5.5")
+    result = adapter.call_with_tools(task_text="buy milk, low priority", tools=TOOLS)
+    assert result.tool_name == "create_task"
+    assert result.arguments == {"title": "Buy milk", "priority": "low"}
+
+
+def test_openai_adapter_returns_none_with_no_tool_calls():
+    fake_response = _FakeOpenAIResponse(choices=[_FakeOpenAIChoice(_FakeOpenAIMessage(tool_calls=None))])
+    adapter = OpenAIAdapter(_FakeOpenAIClient(fake_response), model="gpt-5.5")
+    result = adapter.call_with_tools(task_text="hello", tools=TOOLS)
+    assert result.tool_name is None
+
+
+def test_openai_adapter_defaults_to_its_class_model_constant():
+    adapter = OpenAIAdapter(_FakeOpenAIClient(None))
+    assert adapter.model == OpenAIAdapter.MODEL
+
+
+def test_build_adapter_raises_a_clear_error_when_openai_key_is_missing(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    try:
+        build_adapter("gpt-5.5")
+        assert False, "expected RuntimeError"
+    except RuntimeError as e:
+        assert "OPENAI_API_KEY" in str(e)
+
+
+def test_build_adapter_raises_a_clear_error_when_openrouter_key_is_missing(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    try:
+        build_adapter("qwen/qwen-2.5-72b-instruct")
+        assert False, "expected RuntimeError"
+    except RuntimeError as e:
+        assert "OPENROUTER_API_KEY" in str(e)
