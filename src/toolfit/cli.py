@@ -30,7 +30,7 @@ app = typer.Typer()
 @app.command()
 def eval(
     server_path: str = typer.Argument(..., help="Path to a local stdio MCP server script."),
-    seeds: int = typer.Option(5, help="Tasks generated per tool."),
+    seeds: int = typer.Option(5, min=1, help="Tasks generated per tool."),
     model: str = typer.Option("claude-sonnet-5", help="Model under test."),
     mutate: list[str] = typer.Option(
         [],
@@ -48,7 +48,11 @@ def eval(
         False, "--strict", help="Exit with code 1 if any tool's pass rate falls below --strict-threshold."
     ),
     strict_threshold: float = typer.Option(
-        0.9, "--strict-threshold", help="Minimum acceptable per-tool pass rate when --strict is set."
+        0.9,
+        "--strict-threshold",
+        min=0.0,
+        max=1.0,
+        help="Minimum acceptable per-tool pass rate when --strict is set.",
     ),
 ) -> None:
     """Build and print a confusion matrix for the given MCP server, optionally testing description
@@ -190,7 +194,7 @@ async def _run_eval(
         # arbitrary one of several mutations to represent.
         mutation_result_for_badge = results[0] if len(results) == 1 else None
         svg = render_badge(matrix, mutation_result_for_badge)
-        with open("toolfit-badge.svg", "w") as f:
+        with open("toolfit-badge.svg", "w", encoding="utf-8") as f:
             f.write(svg)
         typer.echo("Wrote badge to toolfit-badge.svg", err=True)
 
@@ -201,6 +205,20 @@ async def _run_eval(
             rate = passed / len(trials)
             if rate < strict_threshold:
                 below_threshold.append(f"{tool_name} ({rate:.0%})")
+
+        # A tool excluded entirely by a schema warning never enters matrix.trials_by_tool, so it
+        # can never be "below threshold" above — it's simply absent from the check. Left silent,
+        # a catalog where every tool failed schema sampling would make --strict exit 0: a green
+        # CI gate on a server that was never actually evaluated. This warning must be visible
+        # regardless of whether below_threshold also triggers an exit below (docs/designs/
+        # toolfit-v0-scope.md, "--strict semantics when a tool couldn't be evaluated at all").
+        if matrix.schema_warnings:
+            typer.echo(
+                f"--strict: {len(matrix.schema_warnings)} tool(s) could not be evaluated (excluded by schema "
+                "warning — see Schema Warnings above) and are NOT included in the pass/fail verdict",
+                err=True,
+            )
+
         if below_threshold:
             typer.echo(
                 f"--strict: {len(below_threshold)} tool(s) below {strict_threshold:.0%} pass rate: "

@@ -31,12 +31,15 @@ def _with_retry(
     *,
     max_retries: int = 3,
     base_delay: float = 1.0,
-    sleep_fn: Callable[[float], None] = time.sleep,
+    sleep_fn: Callable[[float], None] | None = None,
 ) -> T:
     """Retry a network call on a rate-limit error only (design doc M3a Design §1) — never on a
     parsing failure, which retrying can't fix. Exponential backoff with jitter; re-raises after
     max_retries so a persistent outage is never silently swallowed. sleep_fn is injectable so
-    tests run instantly instead of actually sleeping."""
+    tests run instantly instead of actually sleeping; it defaults to None (rather than binding
+    time.sleep at function-definition time) so that `time.sleep` is looked up fresh on every
+    call — a `monkeypatch.setattr("toolfit.run.adapters.time.sleep", ...)` in a test would have
+    no effect on an already-bound default parameter."""
     for attempt in range(max_retries + 1):
         try:
             return fn()
@@ -48,7 +51,7 @@ def _with_retry(
                 f"WARNING: rate limited, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})",
                 file=sys.stderr,
             )
-            sleep_fn(delay)
+            (sleep_fn or time.sleep)(delay)
     raise AssertionError("unreachable")  # every loop iteration above either returns or re-raises
 
 

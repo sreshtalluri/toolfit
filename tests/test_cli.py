@@ -270,7 +270,72 @@ def test_eval_badge_writes_an_svg_file(monkeypatch, tmp_path, capsys):
     assert result.exit_code == 0
     badge_path = tmp_path / "toolfit-badge.svg"
     assert badge_path.exists()
-    assert "toolfit: 100%" in badge_path.read_text()
+    assert "toolfit: 100%" in badge_path.read_text(encoding="utf-8")
+
+
+def test_eval_badge_mutate_and_strict_together_still_writes_the_badge_before_exiting(monkeypatch, tmp_path):
+    # Cross-cutting seam no single-feature reviewer could see on their own: nothing prevents a
+    # future refactor from reordering the badge-write and strict-exit blocks and silently
+    # breaking CI badge publication — a badge documenting a CI failure should still get written
+    # to disk before the process exits non-zero. This combines all three flags together
+    # (--badge, --mutate, --strict), following the same mocking pattern as
+    # test_eval_mutate_applies_bonferroni_correction_across_multiple_mutations and
+    # test_eval_badge_writes_an_svg_file.
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+
+    async def fake_fetch_catalog(params):
+        return ToolCatalog(tools=[Tool(name="tool_a", description="Does A.", inputSchema=_SIMPLE_SCHEMA)])
+
+    def make_trial(passed):
+        return TrialRecord(task=GeneratedTask(text="t", tool_name="tool_a", arguments={}), passed=passed)
+
+    # Base eval's own pass rate for tool_a is 1/3 (~33%), below the default --strict-threshold
+    # of 0.9 — this is what actually drives the --strict exit-1 below (the --strict check reads
+    # matrix.trials_by_tool, not the mutation result).
+    matrix = ConfusionMatrix(
+        counts={"tool_a": {"tool_a": 1}},
+        distinct_trials={"tool_a": 3},
+        trials_per_tool={"tool_a": 3},
+        trials_by_tool={"tool_a": [make_trial(True), make_trial(False), make_trial(False)]},
+        model="gpt-5.5",
+        generator_model="claude-sonnet-5",
+        seeds=3,
+    )
+
+    mutation_result = MutationTrialResult(
+        tool_name="tool_a",
+        new_description="an improved description",
+        before_passes=[True, False, False],
+        after_passes=[True, True, False],
+        p_value=0.5,
+    )
+
+    monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
+    monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds: matrix)
+    monkeypatch.setattr(
+        cli, "run_mutation_trials", lambda matrix, catalog, adapter, *, tool_name, new_description: mutation_result
+    )
+
+    result = runner.invoke(
+        app,
+        ["eval", "somepath", "--mutate", "tool_a:an improved description", "--badge", "--strict"],
+    )
+
+    assert result.exit_code == 1
+
+    # The badge must exist on disk despite the non-zero exit — proving badge-before-strict
+    # ordering is genuinely locked in, not just true today by accident.
+    badge_path = tmp_path / "toolfit-badge.svg"
+    assert badge_path.exists()
+    badge_content = badge_path.read_text(encoding="utf-8")
+
+    # With exactly one --mutate tested, the badge must reflect the mutation's before/after
+    # delta (33% -> 67%), not just the plain overall pass rate that would otherwise apply.
+    assert "33%" in badge_content
+    assert "67%" in badge_content
+    assert "→" in badge_content  # the before -> after arrow
 
 
 def test_eval_still_requires_explicit_subcommand_name_alongside_scan():
@@ -354,6 +419,53 @@ def test_eval_strict_exits_zero_when_every_tools_pass_rate_meets_the_threshold(m
     result = runner.invoke(app, ["eval", "somepath", "--strict"])
 
     assert result.exit_code == 0
+
+
+def test_eval_strict_warns_about_tools_excluded_by_schema_warnings(monkeypatch):
+    # A tool that never entered matrix.trials_by_tool (excluded by a schema warning, never
+    # sampled, never called) cannot be "below threshold" — it's simply absent from the
+    # --strict check. Even when every tool that WAS evaluated passes perfectly (so --strict
+    # would otherwise exit 0, misleadingly "clean"), this must surface an explicit warning
+    # naming the excluded tool(s), per docs/designs/toolfit-v0-scope.md's --strict-semantics
+    # clarification.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+
+    async def fake_fetch_catalog(params):
+        return ToolCatalog(
+            tools=[
+                Tool(name="tool_a", description="Does A.", inputSchema=_SIMPLE_SCHEMA),
+                Tool(name="tool_b", description="Does B.", inputSchema=_SIMPLE_SCHEMA),
+            ]
+        )
+
+    matrix = ConfusionMatrix(
+        counts={"tool_a": {"tool_a": 2}},
+        distinct_trials={"tool_a": 2},
+        trials_per_tool={"tool_a": 2},
+        trials_by_tool={
+            "tool_a": [
+                TrialRecord(task=GeneratedTask(text="t1", tool_name="tool_a", arguments={}), passed=True),
+                TrialRecord(task=GeneratedTask(text="t2", tool_name="tool_a", arguments={}), passed=True),
+            ]
+        },
+        schema_warnings=["tool_b: excluded from scoring — some schema error"],
+        model="gpt-5.5",
+        generator_model="claude-sonnet-5",
+        seeds=2,
+    )
+
+    monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
+    monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds: matrix)
+
+    result = runner.invoke(app, ["eval", "somepath", "--strict"])
+
+    # All evaluated tools passed perfectly, so the pass-rate check alone would exit 0 — but the
+    # excluded tool must still be surfaced, not silently treated as passing.
+    assert result.exit_code == 0
+    assert "--strict" in result.output
+    assert "1 tool(s) could not" in result.output
+    assert "tool_b" in result.output
 
 
 def test_eval_without_strict_exits_zero_regardless_of_pass_rate(monkeypatch):
