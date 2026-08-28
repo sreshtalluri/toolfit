@@ -129,3 +129,31 @@ def test_openrouter_adapter_returns_none_with_no_tool_calls():
     adapter = OpenRouterAdapter(_FakeOpenAIClient(fake_response), model="test/model")
     result = adapter.call_with_tools(task_text="hello", tools=TOOLS)
     assert result.tool_name is None
+
+
+def test_anthropic_adapter_accepts_a_custom_model():
+    captured = {}
+
+    def create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(stop_reason="end_turn", content=[])
+
+    fake_client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    adapter = AnthropicAdapter(fake_client, model="claude-opus-5")
+    adapter.call_with_tools(task_text="hi", tools=[])
+
+    assert captured["model"] == "claude-opus-5"
+
+
+def test_anthropic_adapter_defaults_to_the_class_model():
+    captured = {}
+
+    def create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(stop_reason="end_turn", content=[])
+
+    fake_client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    adapter = AnthropicAdapter(fake_client)
+    adapter.call_with_tools(task_text="hi", tools=[])
+
+    assert captured["model"] == AnthropicAdapter.MODEL

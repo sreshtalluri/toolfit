@@ -36,12 +36,13 @@ def _tool_to_anthropic_schema(tool: Tool) -> dict:
 class AnthropicAdapter:
     MODEL = "claude-sonnet-5"
 
-    def __init__(self, client: anthropic.Anthropic):
+    def __init__(self, client: anthropic.Anthropic, model: str | None = None):
         self._client = client
+        self.model = model or self.MODEL
 
     def call_with_tools(self, *, task_text: str, tools: list[Tool]) -> ToolCall:
         response = self._client.messages.create(
-            model=self.MODEL,
+            model=self.model,
             max_tokens=2000,
             tools=[_tool_to_anthropic_schema(t) for t in tools],
             messages=[{"role": "user", "content": task_text}],
