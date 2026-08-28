@@ -43,3 +43,31 @@ def test_grade_flags_no_call():
     result = grade(TASK, call, catalog_tool_names=CATALOG_NAMES)
     assert result.no_call
     assert not result.passed
+
+
+def test_grade_treats_different_date_formats_as_equal():
+    task = GeneratedTask(text="...", tool_name="create_reminder", arguments={"remind_at": "2026-03-05"})
+    call = ToolCall(tool_name="create_reminder", arguments={"remind_at": "03/05/2026"})
+    result = grade(task, call, catalog_tool_names=["create_reminder"])
+    assert result.passed
+
+
+def test_grade_treats_array_order_as_insignificant():
+    task = GeneratedTask(text="...", tool_name="create_reminder", arguments={"notify_channels": ["email", "sms"]})
+    call = ToolCall(tool_name="create_reminder", arguments={"notify_channels": ["sms", "email"]})
+    result = grade(task, call, catalog_tool_names=["create_reminder"])
+    assert result.passed
+
+
+def test_grade_folds_case_and_whitespace_for_string_arguments():
+    task = GeneratedTask(text="...", tool_name="update_task", arguments={"title": "Book dentist"})
+    call = ToolCall(tool_name="update_task", arguments={"title": "  BOOK DENTIST  "})
+    result = grade(task, call, catalog_tool_names=["update_task"])
+    assert result.passed
+
+
+def test_grade_still_fails_on_genuinely_different_arguments():
+    task = GeneratedTask(text="...", tool_name="update_task", arguments={"title": "Book dentist"})
+    call = ToolCall(tool_name="update_task", arguments={"title": "Buy milk"})
+    result = grade(task, call, catalog_tool_names=["update_task"])
+    assert not result.passed
