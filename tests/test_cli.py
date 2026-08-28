@@ -217,6 +217,28 @@ def test_scan_reports_a_clear_error_for_an_unreachable_server():
     assert "/nonexistent/path/to/server.py" in result.output
 
 
+def test_scan_reports_real_findings_against_the_toy_server():
+    # Ungated end-to-end test: real toy server -> fetch_catalog -> run_lint ->
+    # render_lint_report -> _run_scan's CLI wiring, all exercised together with no mocking. This
+    # is the only test in the suite that proves Task 1 (lint/rules.py), Task 2
+    # (report/render.py's render_lint_report), and Task 3 (this scan command) are actually wired
+    # together correctly end to end — a regression introduced purely in render_lint_report's
+    # formatting, or in _run_scan's wiring of run_lint/render_lint_report together, would
+    # otherwise ship green. No API key needed: `scan` makes no model calls, same reasoning as the
+    # rest of this file's scan coverage.
+    #
+    # Exact wording and ordering below were verified against real CLI output (via this same
+    # CliRunner invocation), not guessed — see the toolfit-m0 final-review fix report.
+    result = runner.invoke(app, ["scan", "examples/toy_server.py"])
+
+    assert result.exit_code == 0
+    assert result.exception is None
+    assert "# toolfit scan report" in result.output
+    assert "2 finding(s) across 5 tool(s)." in result.output
+    assert "create_task, update_task share the identical description" in result.output
+    assert "count_tasks, list_tasks share the identical description" in result.output
+
+
 def test_eval_still_requires_explicit_subcommand_name_alongside_scan():
     # Regression guard for the Typer single-command-collapse quirk this file already hit once
     # (see this file's module docstring): now that TWO commands are registered (eval, scan),
