@@ -81,10 +81,33 @@ def _openai_compatible_call(client: openai.OpenAI, *, model: str, task_text: str
             for t in tools
         ],
     )
+    if not response.choices:
+        # An OpenAI-compatible gateway (OpenRouter in particular, since it proxies many upstream
+        # providers) can return an empty choices array on an upstream provider error. This is a
+        # real no-call outcome, not a bug in this adapter — score it as a miss (matching
+        # AnthropicAdapter's max_tokens-truncation handling above) rather than let an unguarded
+        # IndexError abort the whole eval run mid-catalog.
+        print("WARNING: response had no choices (upstream provider error?)", file=sys.stderr)
+        return ToolCall(tool_name=None, arguments={})
     message = response.choices[0].message
     if message.tool_calls:
         call = message.tool_calls[0]
-        return ToolCall(tool_name=call.function.name, arguments=json.loads(call.function.arguments))
+        try:
+            arguments = json.loads(call.function.arguments)
+        except json.JSONDecodeError:
+            # A model can return malformed JSON in its tool-call arguments — a real, if uncommon,
+            # hazard especially with smaller OpenRouter models. This is a model-output problem,
+            # not a server schema problem: score it as a no-call miss (matching
+            # AnthropicAdapter's max_tokens-truncation handling above) rather than let
+            # json.JSONDecodeError (a ValueError subclass) propagate up and get caught by
+            # confusion.py's `except ValueError` handler, which is written for schema-sampling
+            # errors and would misreport this as a server schema problem.
+            print(
+                f"WARNING: model returned malformed tool-call JSON arguments: {call.function.arguments!r}",
+                file=sys.stderr,
+            )
+            return ToolCall(tool_name=None, arguments={})
+        return ToolCall(tool_name=call.function.name, arguments=arguments)
     return ToolCall(tool_name=None, arguments={})
 
 

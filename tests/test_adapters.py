@@ -206,6 +206,35 @@ def test_openai_adapter_returns_none_with_no_tool_calls():
     assert result.tool_name is None
 
 
+def test_openai_compatible_call_treats_malformed_tool_call_json_as_a_miss_not_a_schema_error(capsys):
+    # A model can return invalid JSON in its tool-call arguments (a real, if uncommon, hazard —
+    # especially with smaller OpenRouter models). This must be scored as a no-call miss, matching
+    # AnthropicAdapter's max_tokens-truncation handling, NOT let json.JSONDecodeError (a ValueError
+    # subclass) propagate up and get caught by confusion.py's ValueError handler, which is written
+    # for schema-sampling errors and would misreport this as a server schema problem.
+    fake_call = _FakeToolCall("create_task", "not valid json{")
+    fake_response = _FakeOpenAIResponse(choices=[_FakeOpenAIChoice(_FakeOpenAIMessage(tool_calls=[fake_call]))])
+    adapter = OpenAIAdapter(_FakeOpenAIClient(fake_response), model="gpt-5.5")
+    result = adapter.call_with_tools(task_text="buy milk, low priority", tools=TOOLS)
+    assert result == ToolCall(tool_name=None, arguments={})
+    captured = capsys.readouterr()
+    assert "malformed" in captured.err.lower()
+    assert "json" in captured.err.lower()
+
+
+def test_openai_compatible_call_returns_a_miss_when_choices_is_empty(capsys):
+    # An OpenAI-compatible gateway (OpenRouter in particular, since it proxies many upstream
+    # providers) can return a response with an empty choices array on an upstream error. This
+    # must not raise an unguarded IndexError — no per-seed handler in confusion.py catches
+    # IndexError, so an unguarded crash would abort the entire eval run mid-catalog.
+    fake_response = _FakeOpenAIResponse(choices=[])
+    adapter = OpenAIAdapter(_FakeOpenAIClient(fake_response), model="gpt-5.5")
+    result = adapter.call_with_tools(task_text="hello", tools=TOOLS)
+    assert result == ToolCall(tool_name=None, arguments={})
+    captured = capsys.readouterr()
+    assert captured.err
+
+
 def test_openai_adapter_defaults_to_its_class_model_constant():
     adapter = OpenAIAdapter(_FakeOpenAIClient(None))
     assert adapter.model == OpenAIAdapter.MODEL
