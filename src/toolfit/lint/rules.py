@@ -55,7 +55,7 @@ def _duplicate_description(catalog: ToolCatalog) -> list[LintFinding]:
         description = (tool.description or "").strip()
         if not description:
             continue
-        key = description.casefold()
+        key = " ".join(description.split()).casefold()
         if key not in groups:
             groups[key] = (description, [])
         groups[key][1].append(tool.name)

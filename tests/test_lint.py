@@ -74,6 +74,18 @@ def test_run_lint_flags_duplicates_case_and_whitespace_insensitively():
     assert len([f for f in findings if f.rule_id == "duplicate_description"]) == 1
 
 
+def test_run_lint_flags_duplicates_with_different_internal_whitespace():
+    # Descriptions commonly originate from Python docstrings that get line-wrapped or
+    # re-indented, producing different *internal* whitespace runs (not just leading/trailing) —
+    # the normalized grouping key must collapse those too, not just casefold + strip.
+    catalog = _catalog(
+        Tool(name="create_task", description="Add a new task.", input_schema=_EMPTY_SCHEMA),
+        Tool(name="update_task", description="Add a  new   task.", input_schema=_EMPTY_SCHEMA),
+    )
+    findings = run_lint(catalog)
+    assert len([f for f in findings if f.rule_id == "duplicate_description"]) == 1
+
+
 def test_run_lint_does_not_flag_a_single_unique_description_as_duplicate():
     catalog = _catalog(
         Tool(name="create_task", description="Add a new task to the list.", input_schema=_EMPTY_SCHEMA),
