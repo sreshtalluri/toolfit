@@ -41,7 +41,14 @@ def eval(
 
 async def _run_eval(server_path: str, *, seeds: int, model: str) -> None:
     params = server_params(server_path)
-    catalog = await fetch_catalog(params)
+    try:
+        catalog = await fetch_catalog(params)
+    except Exception as e:
+        # Failure Modes (design doc, docs/designs/toolfit-v0-scope.md:102-104): an unreachable
+        # server or an auth-required catalog fetch must report the failure explicitly rather than
+        # surfacing a raw traceback or failing silently.
+        typer.echo(f"Could not connect to server at {server_path!r}: {e}", err=True)
+        raise typer.Exit(code=1)
 
     client = anthropic.Anthropic()
     adapter = AnthropicAdapter(client, model=model)

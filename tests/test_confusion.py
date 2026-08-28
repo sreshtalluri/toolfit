@@ -109,3 +109,39 @@ def test_build_confusion_matrix_excludes_a_tool_with_an_unsupported_schema_but_k
     assert "tool_broken" not in matrix.distinct_trials
     assert len(matrix.schema_warnings) == 1
     assert "tool_broken" in matrix.schema_warnings[0]
+
+
+def test_build_confusion_matrix_excludes_a_tool_that_fails_partway_through_its_seed_loop():
+    # Fix 1: a tool whose schema only fails on a LATER seed (not the first one) must still be
+    # excluded atomically — it must not leave partial entries in matrix.counts with no matching
+    # trials_per_tool/distinct_trials, which is what previously produced a KeyError in
+    # render_confusion_matrix downstream.
+    flaky_schema = {
+        "type": "object",
+        "properties": {"thing": {"oneOf": [{"type": "string"}, {"$ref": "#/definitions/Thing"}]}},
+        "required": ["thing"],
+    }
+    catalog = ToolCatalog(
+        tools=[
+            Tool(name="tool_a", description="Does A.", inputSchema=_SIMPLE_SCHEMA),
+            Tool(name="tool_flaky", description="Sometimes breaks.", inputSchema=flaky_schema),
+        ]
+    )
+
+    # seed=1 picks the plain-string branch (succeeds); a later seed picks the $ref branch (fails).
+    matrix = build_confusion_matrix(catalog, _AlwaysToolAAdapter(), _fake_generator_client(), seeds=5)
+
+    assert "tool_flaky" not in matrix.counts
+    assert "tool_flaky" not in matrix.trials_per_tool
+    assert "tool_flaky" not in matrix.distinct_trials
+    assert any("tool_flaky" in w for w in matrix.schema_warnings)
+
+    from toolfit.report.render import render_confusion_matrix
+
+    render_confusion_matrix(matrix)  # must not raise
+
+
+def test_build_confusion_matrix_records_run_metadata():
+    matrix = build_confusion_matrix(CATALOG, _AlwaysToolAAdapter(), _fake_generator_client(), seeds=2)
+    assert matrix.seeds == 2
+    assert matrix.generator_model

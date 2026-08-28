@@ -28,14 +28,15 @@ def test_sample_arguments_rejects_non_object_schema():
         sample_arguments({"type": "string"}, seed=1)
 
 
-def test_sample_arguments_rejects_unknown_property_name():
+def test_sample_arguments_generates_a_generic_placeholder_for_an_unregistered_property_name():
     schema = {
         "type": "object",
-        "properties": {"unregistered_field": {"type": "string"}},
-        "required": ["unregistered_field"],
+        "properties": {"some_new_field": {"type": "string"}},
+        "required": ["some_new_field"],
     }
-    with pytest.raises(ValueError, match="no example values registered"):
-        sample_arguments(schema, seed=1)
+    result = sample_arguments(schema, seed=1)
+    assert "some_new_field" in result["some_new_field"] or isinstance(result["some_new_field"], str)
+    assert len(result["some_new_field"]) > 0
 
 
 def test_count_distinct_counts_all_unique_sets():
@@ -93,6 +94,16 @@ def test_sample_arguments_generates_a_uuid_format_value():
     }
     result = sample_arguments(schema, seed=1)
     uuid.UUID(result["external_id"])  # raises ValueError if not a valid UUID string
+
+
+def test_sample_arguments_generates_a_date_time_format_value():
+    schema = {
+        "type": "object",
+        "properties": {"when": {"type": "string", "format": "date-time"}},
+        "required": ["when"],
+    }
+    result = sample_arguments(schema, seed=1)
+    assert "T" in result["when"]
 
 
 def test_sample_arguments_rejects_unsupported_format():

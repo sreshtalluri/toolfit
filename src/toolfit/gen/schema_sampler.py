@@ -1,7 +1,7 @@
 """Sample one concrete, valid argument set from a tool's JSON Schema.
 
 M1 scope: the common JSON Schema subset real MCP servers actually use — string/integer/number/
-boolean/array-of-primitives, enum, format (date/email/uuid), nullable fields (expressed as
+boolean/array-of-primitives, enum, format (date/date-time/email/uuid), nullable fields (expressed as
 `anyOf: [<type>, {"type": "null"}]`, the real shape the `mcp` SDK generates for `X | None` type
 hints — verified empirically, not assumed), and simple oneOf/anyOf (pick one branch). $ref
 resolution, allOf merging, regex-pattern generation, and dependent constraints are real JSON
@@ -29,6 +29,7 @@ _EXAMPLES: dict[str, list[str]] = {
 
 _FORMAT_GENERATORS: dict[str, Callable[[random.Random], str]] = {
     "date": lambda rng: (date(2026, 1, 1) + timedelta(days=rng.randint(0, 365))).isoformat(),
+    "date-time": lambda rng: (date(2026, 1, 1) + timedelta(days=rng.randint(0, 365))).isoformat() + "T12:00:00",
     "email": lambda rng: f"user{rng.randint(1, 999)}@example.com",
     "uuid": lambda rng: str(uuid.UUID(int=rng.getrandbits(128))),
 }
@@ -78,9 +79,15 @@ def _sample_value(prop_name: str, prop_schema: dict, rng: random.Random) -> Any:
                 raise ValueError(f"sample_arguments: unsupported format {fmt!r} for property {prop_name!r} (M2+)")
             return generator(rng)
         choices = _EXAMPLES.get(prop_name)
-        if not choices:
-            raise ValueError(f"sample_arguments: no example values registered for property {prop_name!r}")
-        return rng.choice(choices)
+        if choices:
+            return rng.choice(choices)
+        # No registered example pool for this property name: real MCP servers have arbitrarily
+        # many string field names, and raising here (as this used to) makes the sampler fail on
+        # ordinary, unremarkable server shapes. Fall back to a generic, clearly-synthetic
+        # placeholder instead — this is not one of the "never silently sample wrong" cases in the
+        # module docstring, since any string value is a structurally valid sample for a plain
+        # `{"type": "string"}` property with no further constraints.
+        return f"sample-{prop_name}-{rng.randint(1, 999)}"
 
     if prop_type == "integer":
         return rng.randint(1, 100)

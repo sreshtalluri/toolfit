@@ -31,13 +31,25 @@ class GradeResult:
         return self.correct_tool and self.correct_args
 
 
-_DATE_FORMATS = ("%Y-%m-%d", "%m/%d/%Y", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ")
+_DATE_ONLY_FORMATS = ("%Y-%m-%d", "%m/%d/%Y")
+_DATETIME_FORMATS = ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ")
 
 
 def _try_parse_date(value: str) -> str | None:
-    for fmt in _DATE_FORMATS:
+    # Date-only and datetime formats are kept in separate passes, on purpose: collapsing a
+    # datetime input down to `.date().isoformat()` (as a single shared loop used to do) discards
+    # the time component, so two arguments on the same date but different times (14:00 vs. 09:30)
+    # would canonicalize to the identical string and register as a false pass. Only genuinely
+    # date-only input collapses to a bare date; datetime input canonicalizes to the full ISO
+    # datetime instead.
+    for fmt in _DATE_ONLY_FORMATS:
         try:
             return datetime.strptime(value, fmt).date().isoformat()
+        except ValueError:
+            continue
+    for fmt in _DATETIME_FORMATS:
+        try:
+            return datetime.strptime(value, fmt).isoformat()
         except ValueError:
             continue
     return None

@@ -36,11 +36,23 @@ ONE tool the assistant should call? Reply with exactly one line: either "SOLVABL
 "AMBIGUOUS", followed by a colon and a one-sentence reason."""
 
 
-def _has_identifier_argument(arguments: dict) -> bool:
+_CREATION_VERBS = ("create", "add", "new", "schedule", "insert", "make")
+
+
+def _has_identifier_argument(arguments: dict, tool_name: str = "") -> bool:
     """Heuristic: does this argument set look like it references an EXISTING item (an id-like
     field alongside other values), rather than fully specifying a brand new one? Informs the
     create-vs-modify prompt guidance below — grounded in the spike's real create/update
-    phrasing-confound finding (design doc Open Questions, finding 1)."""
+    phrasing-confound finding (design doc Open Questions, finding 1).
+
+    Skipped entirely when the tool's own name indicates a creation operation (create_reminder,
+    add_x, schedule_x, ...) — such tools can legitimately take a foreign-key id (e.g. task_id)
+    while still creating something new, and injecting "phrase as modifying an existing item"
+    guidance would corrupt the generated task in exactly the way this heuristic exists to prevent
+    for genuine update-shaped tools. `tool_name` is never sent to the model here — it's used only
+    for this internal branch decision."""
+    if any(tool_name.lower().startswith(verb) for verb in _CREATION_VERBS):
+        return False
     return any(key == "id" or key.endswith("_id") for key in arguments)
 
 
@@ -74,7 +86,7 @@ def generate_task(
     """
     description_line = "" if withhold_description else f"Action description: {tool_description}\n"
     prompt = _PROMPT_TEMPLATE.format(description_line=description_line, arguments=arguments)
-    if _has_identifier_argument(arguments):
+    if _has_identifier_argument(arguments, tool_name=tool_name):
         prompt += _IDENTIFIER_GUIDANCE
     response = client.messages.create(
         model=GENERATOR_MODEL,

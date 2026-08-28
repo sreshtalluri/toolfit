@@ -63,3 +63,11 @@ def test_has_identifier_argument_detects_an_id_shaped_field():
 
 def test_has_identifier_argument_false_when_no_id_shaped_field():
     assert not _has_identifier_argument({"title": "X", "priority": "high"})
+
+
+def test_has_identifier_argument_false_for_a_creation_tool_with_a_foreign_key():
+    assert not _has_identifier_argument({"task_id": "t1", "remind_at": "2026-01-01"}, tool_name="create_reminder")
+
+
+def test_has_identifier_argument_still_true_for_a_genuine_update_tool():
+    assert _has_identifier_argument({"task_id": "t1", "title": "X"}, tool_name="update_task")

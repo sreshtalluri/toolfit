@@ -71,3 +71,12 @@ def test_grade_still_fails_on_genuinely_different_arguments():
     call = ToolCall(tool_name="update_task", arguments={"title": "Buy milk"})
     result = grade(task, call, catalog_tool_names=["update_task"])
     assert not result.passed
+
+
+def test_grade_still_distinguishes_different_times_on_the_same_date():
+    task = GeneratedTask(
+        text="...", tool_name="create_reminder", arguments={"remind_at": "2026-03-05T14:00:00"}
+    )
+    call = ToolCall(tool_name="create_reminder", arguments={"remind_at": "2026-03-05T09:30:00"})
+    result = grade(task, call, catalog_tool_names=["create_reminder"])
+    assert not result.passed

@@ -163,3 +163,16 @@ def test_render_confusion_matrix_includes_schema_warnings():
 
     assert "Schema Warnings" in report
     assert "excluded from scoring" in report
+
+
+def test_render_confusion_matrix_includes_metadata():
+    matrix = ConfusionMatrix()
+    matrix.record(intended_tool="tool_a", actual_tool="tool_a")
+    matrix.trials_per_tool = {"tool_a": 1}
+    matrix.distinct_trials = {"tool_a": 1}
+    matrix.model = "claude-sonnet-5"
+    matrix.generator_model = "claude-sonnet-5"
+    matrix.seeds = 5
+    report = render_confusion_matrix(matrix)
+    assert "Model under test: claude-sonnet-5" in report
+    assert "Seeds per tool: 5" in report

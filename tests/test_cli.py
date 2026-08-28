@@ -26,3 +26,10 @@ def test_eval_help_shows_server_path_argument():
 def test_eval_requires_server_path_argument():
     result = runner.invoke(app, ["eval"])
     assert result.exit_code != 0
+
+
+def test_eval_reports_a_clear_error_for_an_unreachable_server():
+    result = runner.invoke(app, ["eval", "/nonexistent/path/to/server.py"])
+    assert result.exit_code != 0
+    # Should be a clear, plain-text connection error, not a raw Python traceback in the output.
+    assert "Traceback" not in result.output

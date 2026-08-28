@@ -98,4 +98,12 @@ def render_confusion_matrix(matrix: ConfusionMatrix) -> str:
     if matrix.schema_warnings:
         lines += ["", "## Schema Warnings"] + [f"- {w}" for w in matrix.schema_warnings]
 
+    lines += [
+        "",
+        "## Metadata",
+        f"- Model under test: {matrix.model}",
+        f"- Generator model: {matrix.generator_model}",
+        f"- Seeds per tool: {matrix.seeds}",
+    ]
+
     return "\n".join(lines)

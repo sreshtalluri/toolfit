@@ -1,7 +1,9 @@
-"""Minimal model-under-test adapters. Spike scope: Anthropic (primary). OpenRouter is added in
-Task 9 as a compatibility check only, per design doc Next Steps #1. No retry/backoff or
-concurrency here — those are explicit M2 requirements (Engineering Requirements #1, #2 in the
-design doc), out of scope for a single-server, single-request spike.
+"""Minimal model-under-test adapters. AnthropicAdapter is the primary adapter; OpenRouterAdapter
+is a compatibility-check-only adapter added in an earlier milestone, per design doc Next Steps #1.
+No retry/backoff or concurrency here — build_confusion_matrix (M1) already drives many sequential
+requests through these adapters, and that remains explicitly out of scope: concurrency (Engineering
+Requirement #1) and retry/backoff (Engineering Requirement #2) are M2 work per the design doc, not
+M1.
 """
 
 from __future__ import annotations
