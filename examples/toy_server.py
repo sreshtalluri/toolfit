@@ -1,4 +1,4 @@
-"""Toy MCP server for the toolfit spike — 4 tools, two intentionally ambiguous pairs.
+"""Toy MCP server for the toolfit spike — 5 tools, two intentionally ambiguous pairs plus one schema-complexity fixture.
 
 create_task and update_task share the identical docstring on purpose: the realistic
 "copy-pasted description" bug the spike's mutation test (grade/mutator.py) is built to find and,
@@ -15,12 +15,16 @@ task-phrasing bias, for a cleaner read on whether mutation testing produces a cl
 its own.
 """
 
+import datetime
+from typing import Literal
+
 from mcp.server import MCPServer
 
 mcp = MCPServer("ToyTasks")
 
 _TASKS: dict[str, dict] = {}
 _NEXT_ID = 1
+_REMINDERS: list[dict] = []
 
 
 @mcp.tool()
@@ -54,6 +58,29 @@ def count_tasks(status: str) -> str:
     """Get tasks by status."""
     n = sum(1 for t in _TASKS.values() if t["status"] == status)
     return f"{n} tasks with status {status!r}"
+
+
+@mcp.tool()
+def create_reminder(
+    task_id: str,
+    remind_at: datetime.date,
+    notify_channels: list[str],
+    snooze_minutes: int,
+    priority: Literal["low", "medium", "high"],
+    notes: str | None = None,
+) -> str:
+    """Schedule a reminder for an existing task."""
+    _REMINDERS.append(
+        {
+            "task_id": task_id,
+            "remind_at": remind_at.isoformat(),
+            "notify_channels": notify_channels,
+            "snooze_minutes": snooze_minutes,
+            "priority": priority,
+            "notes": notes,
+        }
+    )
+    return f"Reminder scheduled for task {task_id} on {remind_at.isoformat()}"
 
 
 if __name__ == "__main__":

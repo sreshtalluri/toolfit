@@ -23,6 +23,8 @@ _EXAMPLES: dict[str, list[str]] = {
     "priority": ["high", "medium", "low"],
     "task_id": ["t1", "t2", "t3"],
     "status": ["open", "in_progress", "done"],
+    "notify_channels": ["email", "sms", "slack"],
+    "notes": ["Bring snacks", "Confirm with manager first", "Low priority"],
 }
 
 _FORMAT_GENERATORS: dict[str, Callable[[random.Random], str]] = {
