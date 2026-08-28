@@ -26,6 +26,7 @@ class ConfusionMatrix:
     trials_per_tool: dict[str, int] = field(default_factory=dict)
     solvability_warnings: list[str] = field(default_factory=list)
     leakage_warnings: list[str] = field(default_factory=list)
+    schema_warnings: list[str] = field(default_factory=list)
 
     def record(self, *, intended_tool: str, actual_tool: str) -> None:
         row = self.counts.setdefault(intended_tool, {})
@@ -45,35 +46,42 @@ def build_confusion_matrix(
 
     for tool in catalog.tools:
         sampled_args: list[dict] = []
-        for seed in range(1, seeds + 1):
-            args = sample_arguments(tool.input_schema, seed=seed)
-            sampled_args.append(args)
+        try:
+            for seed in range(1, seeds + 1):
+                args = sample_arguments(tool.input_schema, seed=seed)
+                sampled_args.append(args)
 
-            task = generate_task(
-                generator_client,
-                tool_name=tool.name,
-                tool_description=tool.description or "",
-                arguments=args,
-            )
+                task = generate_task(
+                    generator_client,
+                    tool_name=tool.name,
+                    tool_description=tool.description or "",
+                    arguments=args,
+                )
 
-            if not check_no_leakage(task, catalog_tool_names=catalog_names):
-                matrix.leakage_warnings.append(f"{tool.name} (seed {seed}): {task.text!r}")
+                if not check_no_leakage(task, catalog_tool_names=catalog_names):
+                    matrix.leakage_warnings.append(f"{tool.name} (seed {seed}): {task.text!r}")
 
-            solvability = check_solvability(generator_client, task, catalog_descriptions=catalog_descriptions)
-            if not solvability.solvable:
-                matrix.solvability_warnings.append(f"{tool.name} (seed {seed}): {solvability.reasoning}")
+                solvability = check_solvability(generator_client, task, catalog_descriptions=catalog_descriptions)
+                if not solvability.solvable:
+                    matrix.solvability_warnings.append(f"{tool.name} (seed {seed}): {solvability.reasoning}")
 
-            call = adapter.call_with_tools(task_text=task.text, tools=catalog.tools)
-            result = grade(task, call, catalog_tool_names=catalog_names)
-            if result.no_call:
-                actual = NO_CALL
-            elif result.hallucinated:
-                actual = HALLUCINATED
-            else:
-                actual = call.tool_name
-            matrix.record(intended_tool=tool.name, actual_tool=actual)
+                call = adapter.call_with_tools(task_text=task.text, tools=catalog.tools)
+                result = grade(task, call, catalog_tool_names=catalog_names)
+                if result.no_call:
+                    actual = NO_CALL
+                elif result.hallucinated:
+                    actual = HALLUCINATED
+                else:
+                    actual = call.tool_name
+                matrix.record(intended_tool=tool.name, actual_tool=actual)
 
-        matrix.trials_per_tool[tool.name] = seeds
-        matrix.distinct_trials[tool.name] = count_distinct(sampled_args)
+            matrix.trials_per_tool[tool.name] = seeds
+            matrix.distinct_trials[tool.name] = count_distinct(sampled_args)
+        except ValueError as e:
+            # Failure Modes (design doc, docs/designs/toolfit-v0-scope.md:103): a malformed schema
+            # on one tool must not abort the whole run — flag it and exclude it from scoring,
+            # leave every other tool in the catalog to be processed normally.
+            matrix.schema_warnings.append(f"{tool.name}: excluded from scoring — {e}")
+            continue
 
     return matrix

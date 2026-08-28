@@ -79,3 +79,33 @@ def test_build_confusion_matrix_tracks_distinct_trials():
     assert matrix.distinct_trials["tool_a"] <= matrix.trials_per_tool["tool_a"]
     assert "tool_a" in matrix.distinct_trials
     assert "tool_b" in matrix.distinct_trials
+
+
+def test_build_confusion_matrix_excludes_a_tool_with_an_unsupported_schema_but_keeps_going():
+    # sample_arguments (gen/schema_sampler.py) raises ValueError on schema constructs outside the
+    # M1 subset — e.g. "$ref" — by design. One tool's broken schema must not abort the whole run
+    # (design doc Failure Modes, docs/designs/toolfit-v0-scope.md:103): it should be flagged and
+    # excluded, while the rest of the catalog is still scored normally.
+    broken_schema = {
+        "type": "object",
+        "properties": {"thing": {"$ref": "#/definitions/Thing"}},
+        "required": ["thing"],
+    }
+    catalog = ToolCatalog(
+        tools=[
+            Tool(name="tool_a", description="Does A.", inputSchema=_SIMPLE_SCHEMA),
+            Tool(name="tool_broken", description="Has a bad schema.", inputSchema=broken_schema),
+        ]
+    )
+
+    matrix = build_confusion_matrix(catalog, _AlwaysToolAAdapter(), _fake_generator_client(), seeds=2)
+
+    assert matrix.counts["tool_a"]["tool_a"] == 2
+    assert matrix.trials_per_tool["tool_a"] == 2
+    assert "tool_a" in matrix.distinct_trials
+
+    assert "tool_broken" not in matrix.counts
+    assert "tool_broken" not in matrix.trials_per_tool
+    assert "tool_broken" not in matrix.distinct_trials
+    assert len(matrix.schema_warnings) == 1
+    assert "tool_broken" in matrix.schema_warnings[0]
