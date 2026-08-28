@@ -8,7 +8,7 @@ from toolfit.grade.significance import bonferroni_correct, paired_bootstrap_pval
 def test_wilson_interval_is_centered_near_the_observed_rate_for_large_n():
     lo, hi = wilson_interval(50, 100)
     assert lo < 0.5 < hi
-    assert hi - lo < 0.15  # tight interval at n=100
+    assert hi - lo < 0.25  # tight interval at n=100 (correct Wilson width here is ~0.192)
 
 
 def test_wilson_interval_is_wide_for_small_n():
