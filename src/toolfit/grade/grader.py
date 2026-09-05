@@ -68,7 +68,9 @@ def _canonicalize(value: object) -> object:
 
 
 def _canonicalize_args(arguments: dict) -> dict:
-    return {k: _canonicalize(v) for k, v in arguments.items()}
+    # A sampled `None` (nullable optional field) and an omitted key mean the same thing to the
+    # server; the model-under-test almost always omits rather than sending an explicit null.
+    return {k: _canonicalize(v) for k, v in arguments.items() if v is not None}
 
 
 def grade(task: GeneratedTask, call: ToolCall, *, catalog_tool_names: list[str]) -> GradeResult:

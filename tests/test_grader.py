@@ -80,3 +80,11 @@ def test_grade_still_distinguishes_different_times_on_the_same_date():
     call = ToolCall(tool_name="create_reminder", arguments={"remind_at": "2026-03-05T09:30:00"})
     result = grade(task, call, catalog_tool_names=["create_reminder"])
     assert not result.passed
+
+
+def test_grade_treats_sampled_none_and_omitted_key_as_equal():
+    # Nullable optional fields sample as None; models omit the key rather than send null.
+    task = GeneratedTask(text="...", tool_name="create_reminder", arguments={"task_id": "t1", "notes": None})
+    call = ToolCall(tool_name="create_reminder", arguments={"task_id": "t1"})
+    result = grade(task, call, catalog_tool_names=["create_reminder"])
+    assert result.passed

@@ -13,6 +13,7 @@ Typer stops collapsing on its own once there are two-or-more commands — see cl
 docstring history / task-3-report.md for the experiment.
 """
 
+import re
 from types import SimpleNamespace
 
 from mcp.types import Tool
@@ -56,7 +57,10 @@ def test_eval_reports_a_clear_error_for_an_unreachable_server():
 def test_eval_help_shows_mutate_option():
     result = runner.invoke(app, ["eval", "--help"])
     assert result.exit_code == 0
-    assert "--mutate" in result.output
+    # Typer reads FORCE_COLOR at import time and then styles "-" and "-mutate" as separate ANSI
+    # spans, so a raw substring check is environment-dependent.
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    assert "--mutate" in plain
 
 
 def test_eval_rejects_a_malformed_mutate_spec_before_connecting_to_any_server():

@@ -77,3 +77,11 @@ def test_render_badge_returns_zero_percent_for_an_empty_matrix():
     matrix.seeds = 5
     svg = render_badge(matrix)
     assert "toolfit: 0%" in svg
+
+
+def test_render_badge_escapes_xml_special_characters_in_model_name():
+    matrix = _matrix_with_trials()
+    matrix.model = "vendor/<model> & co"
+    svg = render_badge(matrix)
+    assert "<model>" not in svg
+    assert "&lt;model&gt; &amp; co" in svg

@@ -8,6 +8,7 @@ doc's "What Makes This Cool" section.
 from __future__ import annotations
 
 import hashlib
+import html
 
 from toolfit.grade.confusion import ConfusionMatrix
 from toolfit.grade.mutator import MutationTrialResult
@@ -38,7 +39,8 @@ def render_badge(matrix: ConfusionMatrix, mutation_result: MutationTrialResult |
         label_text = f"toolfit: {before_rate:.0%} → {after_rate:.0%}"
 
     task_suite_hash = _task_suite_hash(matrix)
-    metadata = (
+    label_text = html.escape(label_text, quote=True)
+    metadata = html.escape(
         f"model={matrix.model} generator={matrix.generator_model} seeds={matrix.seeds} "
         f"task_suite={task_suite_hash}"
     )

@@ -6,11 +6,14 @@ run/)."""
 
 from types import SimpleNamespace
 
+import pytest
+
 from toolfit.gen.taskgen import (
     GeneratedTask,
     _has_identifier_argument,
     _parse_solvability_response,
     check_solvability,
+    generate_task,
 )
 
 
@@ -88,3 +91,23 @@ def test_creation_verb_skip_handles_camel_case_and_upper_case_tool_names():
     assert not _has_identifier_argument(args, tool_name="createReminder")
     assert not _has_identifier_argument(args, tool_name="CREATE_REMINDER")
     assert not _has_identifier_argument(args, tool_name="schedule-reminder")
+
+
+def _client_returning_no_text_block():
+    fake_response = SimpleNamespace(stop_reason="max_tokens", content=[SimpleNamespace(type="thinking")])
+    return SimpleNamespace(messages=SimpleNamespace(create=lambda **kwargs: fake_response))
+
+
+def test_generate_task_raises_clearly_when_response_has_no_text_block():
+    with pytest.raises(RuntimeError, match="no text.*max_tokens"):
+        generate_task(
+            _client_returning_no_text_block(), tool_name="update_task", tool_description="Modify.", arguments={}
+        )
+
+
+def test_check_solvability_with_no_text_block_fails_safe_as_ambiguous():
+    task = GeneratedTask(text="do the thing", tool_name="update_task", arguments={})
+    result = check_solvability(
+        _client_returning_no_text_block(), task, catalog_descriptions={"update_task": "Modify a task."}
+    )
+    assert result.solvable is False

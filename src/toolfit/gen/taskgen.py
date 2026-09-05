@@ -19,7 +19,7 @@ GENERATOR_MODEL = "claude-sonnet-5"
 _PROMPT_TEMPLATE = """A user wants to trigger this action:
 {description_line}It requires exactly these arguments: {arguments}
 
-Write ONE short, natural sentence a real user would type to a task-management assistant that \
+Write ONE short, natural sentence a real user would type to an AI assistant that \
 would require calling that action with exactly those arguments. Do not name or hint at any \
 internal function/tool/method name — describe only what the user wants, in plain language. \
 Reply with just the sentence, nothing else."""
@@ -108,8 +108,14 @@ def generate_task(
         max_tokens=1000,
         messages=[{"role": "user", "content": prompt}],
     )
-    text = next(block.text for block in response.content if block.type == "text").strip()
-    return GeneratedTask(text=text, tool_name=tool_name, arguments=arguments)
+    text = next((block.text for block in response.content if block.type == "text"), None)
+    if text is None:
+        # Adaptive thinking can spend the whole max_tokens budget before any text block; a bare
+        # StopIteration here would abort the whole eval with no usable message.
+        raise RuntimeError(
+            f"task generator returned no text for {tool_name!r} (stop_reason={response.stop_reason!r})"
+        )
+    return GeneratedTask(text=text.strip(), tool_name=tool_name, arguments=arguments)
 
 
 def check_no_leakage(task: GeneratedTask, *, catalog_tool_names: list[str]) -> bool:
@@ -161,6 +167,6 @@ def check_solvability(
     )
     if response.stop_reason == "max_tokens":
         print("WARNING: solvability check response truncated at max_tokens", file=sys.stderr)
-    text = next(block.text for block in response.content if block.type == "text").strip()
+    text = next((block.text for block in response.content if block.type == "text"), "").strip()
     solvable, reasoning = _parse_solvability_response(text)
     return SolvabilityResult(solvable=solvable, reasoning=reasoning)
