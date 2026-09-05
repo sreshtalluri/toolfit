@@ -128,6 +128,7 @@ toolfit eval <server> [--seeds N] [--model M] [--mutate 'tool:new description'].
 | Flag | Default | Use |
 |---|---|---|
 | `--seeds` | 5 | tasks per tool. **Use 10+ whenever `--mutate`/`--fix` is on** — the exact test's floor p-value is 1/2ⁿ; the CLI warns below 10 |
+| `--max-steps` | 3 | calls the model may make per task; each gets a synthetic result and the task passes if the intended tool is called correctly at any step. `1` = single-call grading (0.1.x numbers) |
 | `--model` | `claude-sonnet-5` | model under test |
 | `--mutate 'tool:text'` | — | re-run that tool's own tasks with its description replaced; repeatable. Unknown tool or empty text → exit 1 before any call |
 | `--fix` | off | propose + re-measure a rewrite for **every** tool with a failed trial |
@@ -141,11 +142,20 @@ the directory where the user wants them. The report is stdout; warnings and prog
 
 ### Reading the report, section by section
 
-1. **Confusion Matrix** — rows are the tool a task was written for, columns what the model called,
-   plus `(no call)` and `(hallucinated)`. Off-diagonal mass is the finding. A single column that
-   collects calls from many rows is usually a *precondition* tool (`git_add` before `git_commit`,
-   `list_allowed_directories` before any path op): the model is right and the single-step grader is
-   strict. Say so to the user; that is not a description bug.
+1. **Confusion Matrix** — rows are the tool a task was written for, columns what the model called
+   **first**, plus `(no call)` and `(hallucinated)`. Off-diagonal mass is the finding. A single
+   column that collects calls from many rows is usually a *precondition* tool (`git_add` before
+   `git_commit`, `list_allowed_directories` before any path op) — read the next section before
+   calling it confusion.
+1a. **Preconditions (observed)** — for trials that *passed* within `--max-steps`, the tools called
+   before the correct one: `git_add → git_commit: 5/10 trials`, plus a mermaid graph. This is the
+   dependency graph the *model* believes in, built from behaviour, not declared by anyone.
+1b. **Undeclared Preconditions** — edges followed in ≥30% of trials whose target description never
+   mentions the earlier tool. Present the user with the two fixes and let them choose: *state it*
+   ("requires staged changes — call git_add first") or *make the tool self-sufficient*. Then
+   re-run: `--mutate`/`--fix` print "Reached via an earlier call: before → after" so either
+   choice is verifiable. A precondition that *is* mentioned isn't flagged — that's a documented
+   workflow, not a bug.
 2. **Trial Diversity** — `7/10 distinct` means seeds collided on identical arguments; the evidence
    is thinner than n suggests.
 3. **Pass Rates** — right tool *and* right arguments, per tool, with a Wilson 95% interval. At n=10
@@ -238,7 +248,9 @@ exists anywhere and none is needed.
 
 - **Every rewrite rejected.** Normal on a strong model against a small catalog; the fix loop only
   accepts what it measured. Check whether the failures are argument-level (a description can't fix
-  those) or precondition calls (see §4.1).
+  those) or precondition calls (§4, 1a — those now *pass* with the default `--max-steps 3`).
+- **Pass rates higher than a 0.1.x run of the same server.** Expected: 0.2.0 grades multi-step.
+  Re-run with `--max-steps 1` if you need the old number.
 - **`count`-style tools at 0/10.** The generator tends to phrase count requests as "show me…";
   known limitation, documented in the design doc.
 - **`p=1.0000` on a "worse" result.** Correct: the test is one-sided for improvement.
