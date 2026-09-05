@@ -312,4 +312,4 @@ Three public servers evaluated end-to-end (`docs/corpus.md`, `docs/examples/`): 
 
 **Adapters own the multi-turn formats** (Anthropic `tool_result` blocks vs OpenAI `role: tool` messages): `ModelAdapter.run(task_text, tools, *, max_steps, result_for) -> list[ToolCall]`; `call_with_tools` is `run(max_steps=1)`. Parallel tool_use blocks in one response count as consecutive steps in the order returned.
 
-**Cost.** Extra model-under-test calls only when the model actually chains; observed ~+30% on servers with precondition tools, none on servers without.
+**Cost.** Extra model-under-test calls only when the model actually chains. Measured on mcp-server-git, 12 tools × 10 seeds: 1177 s vs ~500 s single-step — about 2×, not the +30% first estimated; the model verifies after acting more often than expected.

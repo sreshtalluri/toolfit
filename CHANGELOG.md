@@ -11,6 +11,7 @@ synthetic result, and a task passes if the intended tool is called correctly at 
   correct one, as a list and a mermaid graph — and **Undeclared Preconditions**: dependencies
   the model follows in ≥30% of trials that the target tool's description never mentions.
 - `--mutate` / `--fix` verdicts show precondition counts before → after alongside pass rates.
+- Roughly 2× wall time on servers where the model chains (measured: mcp-server-git 1177 s vs ~500 s).
 - Synthetic results come from the tool's `outputSchema` when declared, else `{"ok": true}`;
   never from a model.
 - The confusion matrix is still *intended × first call*, so 0.1.x matrices remain comparable.
