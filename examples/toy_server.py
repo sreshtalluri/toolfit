@@ -1,3 +1,6 @@
+# /// script
+# dependencies = ["mcp>=2.0,<3"]
+# ///
 """Toy MCP server for the toolfit spike — 5 tools, two intentionally ambiguous pairs plus one schema-complexity fixture.
 
 create_task and update_task share the identical docstring on purpose: the realistic
