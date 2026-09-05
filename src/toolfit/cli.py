@@ -40,6 +40,13 @@ def eval(
         "or a command line like 'npx -y @modelcontextprotocol/server-github'.",
     ),
     seeds: int = typer.Option(5, min=1, help="Tasks generated per tool."),
+    max_steps: int = typer.Option(
+        3,
+        "--max-steps",
+        min=1,
+        help="Tool calls the model may make per task; each gets a synthetic result and the trial passes if "
+        "the intended tool is called correctly at any step. 1 = single-call grading (0.1.x behaviour).",
+    ),
     model: str = typer.Option("claude-sonnet-5", help="Model under test."),
     mutate: list[str] = typer.Option(
         [],
@@ -82,6 +89,7 @@ def eval(
         _run_eval(
             server_path,
             seeds=seeds,
+            max_steps=max_steps,
             model=model,
             mutate=mutate,
             fix=fix or bool(fix_tool),
@@ -172,6 +180,7 @@ async def _run_eval(
     server_path: str,
     *,
     seeds: int,
+    max_steps: int,
     model: str,
     mutate: list[str],
     fix: bool,
@@ -244,7 +253,7 @@ async def _run_eval(
 
     generator_client = anthropic.Anthropic()
     try:
-        matrix = build_confusion_matrix(catalog, adapter, generator_client, seeds=seeds)
+        matrix = build_confusion_matrix(catalog, adapter, generator_client, seeds=seeds, max_steps=max_steps)
     except (anthropic.APIError, openai.APIError) as e:
         # Non-transient provider errors (400 invalid tool name, 401, exhausted retries) surface as a
         # named CLI error, not a traceback. Nothing is printed for the partial run on purpose: a
@@ -267,7 +276,9 @@ async def _run_eval(
                 continue
             try:
                 results.append(
-                    run_mutation_trials(matrix, catalog, adapter, tool_name=tool_name, new_description=new_description)
+                    run_mutation_trials(
+                        matrix, catalog, adapter, tool_name=tool_name, new_description=new_description, max_steps=max_steps
+                    )
                 )
             except (anthropic.APIError, openai.APIError) as e:
                 typer.echo(f"Model provider error during --mutate {tool_name!r}: {e}", err=True)
@@ -276,7 +287,9 @@ async def _run_eval(
     verdicts: list[FixVerdict] = []
     if fix:
         try:
-            verdicts = run_fix_loop(matrix, catalog, adapter, generator_client, only=fix_tool or None)
+            verdicts = run_fix_loop(
+                matrix, catalog, adapter, generator_client, only=fix_tool or None, max_steps=max_steps
+            )
         except (anthropic.APIError, openai.APIError) as e:
             typer.echo(f"Model provider error during --fix: {e}", err=True)
             raise typer.Exit(code=1)

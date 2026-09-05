@@ -5,7 +5,7 @@ from __future__ import annotations
 from toolfit.connect.client import ToolCatalog
 from toolfit.fix.fixer import FixVerdict, ProposedFix
 from toolfit.gen.taskgen import GeneratedTask
-from toolfit.grade.confusion import HALLUCINATED, NO_CALL, ConfusionMatrix
+from toolfit.grade.confusion import HALLUCINATED, NO_CALL, ConfusionMatrix, undeclared_preconditions
 from toolfit.grade.mutator import MutationResult, MutationTrialResult
 from toolfit.grade.significance import wilson_interval
 from toolfit.lint.rules import LintFinding
@@ -106,6 +106,30 @@ def render_confusion_matrix(matrix: ConfusionMatrix) -> str:
     if pass_rate_lines:
         lines += ["", "## Pass Rates"] + pass_rate_lines
 
+    if matrix.precondition_edges:
+        # Observed precondition graph (design doc M5). Mermaid renders on GitHub, which makes this
+        # the shareable "confusion map" — one edge per tool pair, labelled with how often.
+        lines += ["", "## Preconditions (observed)", ""]
+        lines.append("Tools the model called *before* correctly calling the intended one, per trial:")
+        lines.append("")
+        for intended in sorted(matrix.precondition_edges):
+            n = len(matrix.trials_by_tool.get(intended, []))
+            for earlier, count in sorted(matrix.precondition_edges[intended].items(), key=lambda kv: -kv[1]):
+                lines.append(f"- {earlier} → {intended}: {count}/{n} trials")
+        lines += ["", "```mermaid", "graph LR"]
+        for intended in sorted(matrix.precondition_edges):
+            n = len(matrix.trials_by_tool.get(intended, []))
+            for earlier, count in sorted(matrix.precondition_edges[intended].items()):
+                lines.append(f"  {earlier} -->|{count}/{n}| {intended}")
+        lines.append("```")
+        undeclared = undeclared_preconditions(matrix)
+        if undeclared:
+            lines += ["", "## Undeclared Preconditions", ""]
+            lines.append("The model follows these dependencies, but the catalog is silent about them. Either state")
+            lines.append("the precondition in the description or make the tool self-sufficient, then re-run:")
+            lines.append("")
+            lines += [f"- {u}" for u in undeclared]
+
     if matrix.leakage_warnings:
         lines += ["", "## Leakage Warnings"] + [f"- {w}" for w in matrix.leakage_warnings]
     if matrix.solvability_warnings:
@@ -119,6 +143,7 @@ def render_confusion_matrix(matrix: ConfusionMatrix) -> str:
         f"- Model under test: {matrix.model}",
         f"- Generator model: {matrix.generator_model}",
         f"- Seeds per tool: {matrix.seeds}",
+        f"- Max steps per task: {matrix.max_steps}",
     ]
 
     return "\n".join(lines)
@@ -145,6 +170,7 @@ def render_mutation_results(results: list[MutationTrialResult]) -> str:
             f"- New description: {r.new_description!r}",
             f"- Before: {before_passed}/{before_n} ({before_passed / before_n:.0%}), 95% CI [{before_lo:.0%}, {before_hi:.0%}]",
             f"- After:  {after_passed}/{after_n} ({after_passed / after_n:.0%}), 95% CI [{after_lo:.0%}, {after_hi:.0%}]",
+            f"- Reached via an earlier call: {r.before_preconditions}/{before_n} → {r.after_preconditions}/{after_n}",
             f"- p-value: {r.p_value:.4f}",
             f"- Verdict (Bonferroni-corrected): {verdict}",
         ]
@@ -170,6 +196,7 @@ def render_fix_results(verdicts: list[FixVerdict]) -> str:
             n = len(t.before_passes)
             lines += [
                 f"- Pass rate: {sum(t.before_passes)}/{n} → {sum(t.after_passes)}/{n}, p-value {t.p_value:.4f}",
+                f"- Reached via an earlier call: {t.before_preconditions}/{n} → {t.after_preconditions}/{n}",
             ]
         lines.append(f"- Reason: {v.reason}")
     return "\n".join(lines)

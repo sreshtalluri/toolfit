@@ -12,7 +12,7 @@ contradict the project's core credibility argument.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from toolfit.gen.taskgen import GeneratedTask
@@ -25,10 +25,16 @@ class GradeResult:
     correct_args: bool
     hallucinated: bool  # model called a tool name not in the catalog at all (design doc Failure Modes)
     no_call: bool  # model made no tool call
+    steps_to_correct: int | None = None  # 1-based index of the passing call in a multi-step trial
+    preceding: list[str] = field(default_factory=list)  # tools called before the passing call
 
     @property
     def passed(self) -> bool:
         return self.correct_tool and self.correct_args
+
+    @property
+    def via_precondition(self) -> bool:
+        return self.passed and bool(self.preceding)
 
 
 _DATE_ONLY_FORMATS = ("%Y-%m-%d", "%m/%d/%Y")
@@ -74,12 +80,29 @@ def _canonicalize_args(arguments: dict) -> dict:
 
 
 def grade(task: GeneratedTask, call: ToolCall, *, catalog_tool_names: list[str]) -> GradeResult:
-    if call.tool_name is None:
+    return grade_sequence(task, [call], catalog_tool_names=catalog_tool_names)
+
+
+def grade_sequence(task: GeneratedTask, calls: list[ToolCall], *, catalog_tool_names: list[str]) -> GradeResult:
+    """Multi-step grading (design doc M5): the trial passes if the intended tool is called with
+    matching arguments *anywhere* in the sequence; the tools called before that are recorded as
+    the precondition path. With a single call this is exactly the 0.1.x rule."""
+    named = [c for c in calls if c.tool_name is not None]
+    if not named:
         return GradeResult(correct_tool=False, correct_args=False, hallucinated=False, no_call=True)
-    if call.tool_name not in catalog_tool_names:
-        # Failure Mode (design doc): hallucinated/nonexistent tool call — scored as a miss,
-        # never a crash, never silently dropped.
-        return GradeResult(correct_tool=False, correct_args=False, hallucinated=True, no_call=False)
-    correct_tool = call.tool_name == task.tool_name
-    correct_args = correct_tool and _canonicalize_args(call.arguments) == _canonicalize_args(task.arguments)
-    return GradeResult(correct_tool=correct_tool, correct_args=correct_args, hallucinated=False, no_call=False)
+    expected = _canonicalize_args(task.arguments)
+    for i, call in enumerate(named):
+        if call.tool_name == task.tool_name and _canonicalize_args(call.arguments) == expected:
+            return GradeResult(
+                correct_tool=True,
+                correct_args=True,
+                hallucinated=False,
+                no_call=False,
+                steps_to_correct=i + 1,
+                preceding=[c.tool_name for c in named[:i] if c.tool_name is not None],
+            )
+    correct_tool = any(c.tool_name == task.tool_name for c in named)
+    # Failure Mode (design doc): a hallucinated/nonexistent tool name is scored as a miss, never
+    # a crash, never silently dropped. Attributed to the first call, which is what the matrix shows.
+    hallucinated = named[0].tool_name not in catalog_tool_names
+    return GradeResult(correct_tool=correct_tool, correct_args=False, hallucinated=hallucinated, no_call=False)

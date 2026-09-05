@@ -64,10 +64,36 @@ def _with_retry(
 class ToolCall:
     tool_name: str | None  # None means the model made no tool call at all
     arguments: dict
+    call_id: str = ""  # provider's id for the call; needed to hand a result back in multi-step runs
+
+
+ResultFor = Callable[[ToolCall], dict]
 
 
 class ModelAdapter(Protocol):
     def call_with_tools(self, *, task_text: str, tools: list[Tool]) -> ToolCall: ...
+
+
+def run_steps(
+    adapter: ModelAdapter, *, task_text: str, tools: list[Tool], max_steps: int, result_for: ResultFor
+) -> list[ToolCall]:
+    """Multi-step trial (design doc M5): let the model make up to `max_steps` calls, feeding each
+    a synthetic result from `result_for`. Adapters that implement `run` own their provider's
+    multi-turn message format; anything else (test fakes) is treated as single-step."""
+    run = getattr(adapter, "run", None)
+    if run is None or max_steps <= 1:
+        call = adapter.call_with_tools(task_text=task_text, tools=tools)
+        return [call] if call.tool_name is not None else []
+    return run(task_text=task_text, tools=tools, max_steps=max_steps, result_for=result_for)
+
+
+def _result_text(result_for: ResultFor, call: ToolCall) -> str:
+    return json.dumps(result_for(call))
+
+
+def _block_dict(block: object) -> dict:
+    dump = getattr(block, "model_dump", None)
+    return dump(exclude_none=True) if dump else dict(vars(block))
 
 
 def _tool_to_anthropic_schema(tool: Tool) -> dict:
@@ -86,74 +112,93 @@ class AnthropicAdapter:
         self.model = model or self.MODEL
 
     def call_with_tools(self, *, task_text: str, tools: list[Tool]) -> ToolCall:
-        response = _with_retry(
-            lambda: self._client.messages.create(
-                model=self.model,
-                max_tokens=2000,
-                tools=[_tool_to_anthropic_schema(t) for t in tools],
-                messages=[{"role": "user", "content": task_text}],
+        calls = self.run(task_text=task_text, tools=tools, max_steps=1, result_for=lambda _: {})
+        return calls[0] if calls else ToolCall(tool_name=None, arguments={})
+
+    def run(self, *, task_text: str, tools: list[Tool], max_steps: int, result_for: ResultFor) -> list[ToolCall]:
+        messages: list[dict] = [{"role": "user", "content": task_text}]
+        calls: list[ToolCall] = []
+        while len(calls) < max_steps:
+            response = _with_retry(
+                lambda: self._client.messages.create(
+                    model=self.model,
+                    max_tokens=2000,
+                    tools=[_tool_to_anthropic_schema(t) for t in tools],
+                    messages=messages,
+                )
             )
+            tool_uses = [b for b in response.content if b.type == "tool_use"]
+            if not tool_uses:
+                if response.stop_reason == "max_tokens":
+                    # Adaptive thinking can spend the whole budget before a tool_use block — a real
+                    # no-call outcome, scored as a miss by the grader, never a crash here.
+                    print("WARNING: response truncated at max_tokens before a tool_use block was found", file=sys.stderr)
+                break
+            # Blocks go back verbatim (thinking blocks carry signatures the API checks).
+            messages.append({"role": "assistant", "content": [_block_dict(b) for b in response.content]})
+            results = []
+            for b in tool_uses:
+                call = ToolCall(tool_name=b.name, arguments=b.input, call_id=getattr(b, "id", ""))
+                calls.append(call)
+                results.append({"type": "tool_result", "tool_use_id": call.call_id, "content": _result_text(result_for, call)})
+            messages.append({"role": "user", "content": results})
+        return calls
+
+
+def _openai_compatible_run(
+    client: openai.OpenAI, *, model: str, task_text: str, tools: list[Tool], max_steps: int, result_for: ResultFor
+) -> list[ToolCall]:
+    """Shared multi-step body for any OpenAI-function-calling-compatible provider (OpenAI itself,
+    OpenRouter's endpoint). Request/response shapes are identical; only base_url/api_key differ."""
+    messages: list[dict] = [{"role": "user", "content": task_text}]
+    calls: list[ToolCall] = []
+    tool_specs = [
+        {"type": "function", "function": {"name": t.name, "description": t.description or "", "parameters": t.input_schema}}
+        for t in tools
+    ]
+    while len(calls) < max_steps:
+        response = _with_retry(lambda: client.chat.completions.create(model=model, messages=messages, tools=tool_specs))
+        if not response.choices:
+            # Gateways (OpenRouter especially) return an empty choices array on an upstream error —
+            # a real no-call outcome, scored as a miss rather than an IndexError mid-catalog.
+            print("WARNING: response had no choices (upstream provider error?)", file=sys.stderr)
+            break
+        message = response.choices[0].message
+        if not message.tool_calls:
+            break
+        messages.append(
+            {
+                "role": "assistant",
+                "content": getattr(message, "content", None),
+                "tool_calls": [
+                    {
+                        "id": getattr(tc, "id", ""),
+                        "type": "function",
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                    }
+                    for tc in message.tool_calls
+                ],
+            }
         )
-        for block in response.content:
-            if block.type == "tool_use":
-                return ToolCall(tool_name=block.name, arguments=block.input)
-        if response.stop_reason == "max_tokens":
-            # Sonnet 5's adaptive thinking can consume the whole budget before reaching a
-            # tool_use block — this is a real no-call outcome, not a bug in this adapter, and
-            # scoring it (grade/grader.py) treats it as a miss rather than a crash. Grading logic
-            # never lives here — that's a separate, out-of-scope concern.
-            print(
-                "WARNING: response truncated at max_tokens before a tool_use block was found",
-                file=sys.stderr,
-            )
-        return ToolCall(tool_name=None, arguments={})
+        for tc in message.tool_calls:
+            call_id = getattr(tc, "id", "")
+            try:
+                arguments = json.loads(tc.function.arguments)
+                call = ToolCall(tool_name=tc.function.name, arguments=arguments, call_id=call_id)
+            except json.JSONDecodeError:
+                # Malformed tool-call JSON is a model-output problem, not a server schema problem:
+                # record a no-call (the grader scores it as a miss) instead of letting the
+                # ValueError subclass reach confusion.py's schema-error handler.
+                print(f"WARNING: model returned malformed tool-call JSON arguments: {tc.function.arguments!r}", file=sys.stderr)
+                call = ToolCall(tool_name=None, arguments={}, call_id=call_id)
+            calls.append(call)
+            messages.append({"role": "tool", "tool_call_id": call_id, "content": _result_text(result_for, call)})
+    return calls
 
 
 def _openai_compatible_call(client: openai.OpenAI, *, model: str, task_text: str, tools: list[Tool]) -> ToolCall:
-    """Shared call_with_tools body for any OpenAI-function-calling-compatible provider (OpenAI
-    itself, OpenRouter's OpenAI-compatible endpoint). The request/response shape is identical;
-    only the client's base_url/api_key differ, which the caller already configured."""
-    response = _with_retry(
-        lambda: client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": task_text}],
-            tools=[
-                {
-                    "type": "function",
-                    "function": {"name": t.name, "description": t.description or "", "parameters": t.input_schema},
-                }
-                for t in tools
-            ],
-        )
-    )
-    if not response.choices:
-        # An OpenAI-compatible gateway (OpenRouter in particular, since it proxies many upstream
-        # providers) can return an empty choices array on an upstream provider error. This is a
-        # real no-call outcome, not a bug in this adapter — score it as a miss (matching
-        # AnthropicAdapter's max_tokens-truncation handling above) rather than let an unguarded
-        # IndexError abort the whole eval run mid-catalog.
-        print("WARNING: response had no choices (upstream provider error?)", file=sys.stderr)
-        return ToolCall(tool_name=None, arguments={})
-    message = response.choices[0].message
-    if message.tool_calls:
-        call = message.tool_calls[0]
-        try:
-            arguments = json.loads(call.function.arguments)
-        except json.JSONDecodeError:
-            # A model can return malformed JSON in its tool-call arguments — a real, if uncommon,
-            # hazard especially with smaller OpenRouter models. This is a model-output problem,
-            # not a server schema problem: score it as a no-call miss (matching
-            # AnthropicAdapter's max_tokens-truncation handling above) rather than let
-            # json.JSONDecodeError (a ValueError subclass) propagate up and get caught by
-            # confusion.py's `except ValueError` handler, which is written for schema-sampling
-            # errors and would misreport this as a server schema problem.
-            print(
-                f"WARNING: model returned malformed tool-call JSON arguments: {call.function.arguments!r}",
-                file=sys.stderr,
-            )
-            return ToolCall(tool_name=None, arguments={})
-        return ToolCall(tool_name=call.function.name, arguments=arguments)
-    return ToolCall(tool_name=None, arguments={})
+    calls = _openai_compatible_run(client, model=model, task_text=task_text, tools=tools, max_steps=1, result_for=lambda _: {})
+    return calls[0] if calls else ToolCall(tool_name=None, arguments={})
 
 
 class OpenAIAdapter:
@@ -169,6 +214,11 @@ class OpenAIAdapter:
     def call_with_tools(self, *, task_text: str, tools: list[Tool]) -> ToolCall:
         return _openai_compatible_call(self._client, model=self.model, task_text=task_text, tools=tools)
 
+    def run(self, *, task_text: str, tools: list[Tool], max_steps: int, result_for: ResultFor) -> list[ToolCall]:
+        return _openai_compatible_run(
+            self._client, model=self.model, task_text=task_text, tools=tools, max_steps=max_steps, result_for=result_for
+        )
+
 
 class OpenRouterAdapter:
     """Third M2 adapter, routed through OpenRouter's OpenAI-compatible endpoint (design doc M2
@@ -183,6 +233,11 @@ class OpenRouterAdapter:
 
     def call_with_tools(self, *, task_text: str, tools: list[Tool]) -> ToolCall:
         return _openai_compatible_call(self._client, model=self.model, task_text=task_text, tools=tools)
+
+    def run(self, *, task_text: str, tools: list[Tool], max_steps: int, result_for: ResultFor) -> list[ToolCall]:
+        return _openai_compatible_run(
+            self._client, model=self.model, task_text=task_text, tools=tools, max_steps=max_steps, result_for=result_for
+        )
 
 
 Provider = Literal["anthropic", "openai", "openrouter"]
