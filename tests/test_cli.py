@@ -46,7 +46,8 @@ def test_eval_requires_server_path_argument():
     assert result.exit_code != 0
 
 
-def test_eval_reports_a_clear_error_for_an_unreachable_server():
+def test_eval_reports_a_clear_error_for_an_unreachable_server(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")  # keys are checked before connecting
     result = runner.invoke(app, ["eval", "/nonexistent/path/to/server.py"])
     assert result.exit_code != 0
     # Assert the handled message is actually emitted, and that the command exited via typer.Exit
@@ -133,6 +134,7 @@ def test_eval_fix_tool_rejects_an_unknown_tool_name(monkeypatch):
     async def fake_fetch_catalog(params):
         return ToolCatalog(tools=[Tool(name="tool_a", description="Does A.", inputSchema=_SIMPLE_SCHEMA)])
 
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")  # keys are checked before connecting
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     result = runner.invoke(app, ["eval", "somepath", "--fix-tool", "typo_name"])
     assert result.exit_code == 1
@@ -143,6 +145,7 @@ def test_eval_mutate_rejects_an_unknown_tool_name(monkeypatch):
     async def fake_fetch_catalog(params):
         return ToolCatalog(tools=[Tool(name="tool_a", description="Does A.", inputSchema=_SIMPLE_SCHEMA)])
 
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")  # keys are checked before connecting
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
 
     result = runner.invoke(app, ["eval", "somepath", "--mutate", "no_such_tool:new description"])

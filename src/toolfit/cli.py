@@ -200,6 +200,23 @@ async def _run_eval(
             err=True,
         )
 
+    # Keys are checked before the server is launched: a missing key is a configuration error that
+    # no amount of connecting will fix, and launching an `npx` server takes seconds.
+    try:
+        adapter = build_adapter(model)
+    except RuntimeError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(code=1)
+    # Task generation always uses Anthropic (GENERATOR_MODEL, gen/taskgen.py) regardless of --model.
+    # anthropic.Anthropic() doesn't raise on a missing key at construction time, so check explicitly
+    # rather than let a TypeError traceback surface on the first generator call.
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        typer.echo(
+            "ANTHROPIC_API_KEY is not set — required for task generation regardless of --model",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
     try:
         catalog = await fetch_catalog(server_params(server_path))
     except Exception as e:
@@ -225,25 +242,6 @@ async def _run_eval(
             )
             raise typer.Exit(code=1)
 
-    try:
-        adapter = build_adapter(model)
-    except RuntimeError as e:
-        typer.echo(str(e), err=True)
-        raise typer.Exit(code=1)
-
-    # Task generation always uses Anthropic (GENERATOR_MODEL, gen/taskgen.py), regardless of which
-    # --model the user chose for the model under test — before M2's multi-provider support, --model
-    # was always Anthropic too, so this key requirement was invisible. anthropic.Anthropic() does
-    # not raise on a missing key at construction time; without this explicit check, the failure
-    # would surface as a raw, unhandled TypeError traceback on the first real generator call inside
-    # build_confusion_matrix, not the clean CLI error (exit code 1, message on stderr) required for
-    # missing API keys.
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        typer.echo(
-            "ANTHROPIC_API_KEY is not set — required for task generation regardless of --model",
-            err=True,
-        )
-        raise typer.Exit(code=1)
     generator_client = anthropic.Anthropic()
     try:
         matrix = build_confusion_matrix(catalog, adapter, generator_client, seeds=seeds)

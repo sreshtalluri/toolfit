@@ -114,8 +114,10 @@ uvx toolfit --help          # zero-install, one-off
 pipx install toolfit        # persistent / CI
 ```
 
-Python 3.10+. Talks to servers over the MCP protocol via the official `mcp` SDK, so the
-server can be in any language.
+Python 3.10+ — on an older interpreter (macOS system `python3` is 3.9) pip only says
+`No matching distribution found for toolfit`; use `uvx`, or `uv venv --python 3.12`. Talks to
+servers over the MCP protocol via the official `mcp` SDK, so the server can be in any language.
+Agents: see [`AGENTS.md`](AGENTS.md) for the full operating manual.
 
 ## Pointing it at a server
 
