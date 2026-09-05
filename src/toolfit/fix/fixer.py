@@ -7,6 +7,11 @@ from dataclasses import dataclass
 
 import anthropic
 
+from toolfit.connect.client import ToolCatalog
+from toolfit.grade.confusion import ConfusionMatrix
+from toolfit.grade.mutator import MutationTrialResult, run_mutation_trials
+from toolfit.run.adapters import ModelAdapter
+
 FIXER_MODEL = "claude-sonnet-5"
 
 _PROMPT_TEMPLATE = """This tool's description is causing an AI assistant to confuse it with a \
@@ -63,3 +68,70 @@ def _validate(tool_name: str, current_description: str, new_description: str) ->
             tool_name, current_description, new_description, rejected=True, rejection_reason="too short to be a real description"
         )
     return ProposedFix(tool_name, current_description, new_description, rejected=False, rejection_reason=None)
+
+
+@dataclass
+class FixVerdict:
+    proposal: ProposedFix
+    trial: MutationTrialResult | None  # None when the proposal was rejected before re-measurement
+
+    @property
+    def accepted(self) -> bool:
+        # Significance alone isn't enough — the test is one-sided for improvement, but "significant
+        # and worse" can't happen; the explicit after > before check keeps that invariant readable.
+        return (
+            self.trial is not None
+            and self.trial.significant
+            and sum(self.trial.after_passes) > sum(self.trial.before_passes)
+        )
+
+    @property
+    def reason(self) -> str:
+        if self.trial is None:
+            return f"rejected before re-measurement: {self.proposal.rejection_reason}"
+        before, after = sum(self.trial.before_passes), sum(self.trial.after_passes)
+        if self.accepted:
+            return "accepted"
+        if after < before:
+            return "rejected: made things worse"
+        if after == before:
+            return "rejected: no change"
+        return "rejected: improvement not significant after correction"
+
+
+def run_fix_loop(
+    matrix: ConfusionMatrix,
+    catalog: ToolCatalog,
+    adapter: ModelAdapter,
+    client: anthropic.Anthropic,
+) -> list[FixVerdict]:
+    """M4 fix loop (design doc Pipeline: mutation output -> fix/ -> re-verify). For every tool with
+    at least one failed trial: propose a rewrite, then re-run that tool's OWN base tasks against a
+    catalog with only that description patched (protocol-level, Premise 1). Tools the model
+    actually confused it with are listed first in the rewrite prompt. `significant` on each trial is
+    left for the caller to set after Bonferroni-correcting across everything tested in the run.
+    """
+    verdicts: list[FixVerdict] = []
+    for tool_name, trials in matrix.trials_by_tool.items():
+        if all(t.passed for t in trials):
+            continue
+        tool = catalog.get(tool_name)
+        if tool is None:
+            continue
+        confused_with = [
+            called
+            for called, n in matrix.counts.get(tool_name, {}).items()
+            if n > 0 and called != tool_name and catalog.get(called) is not None
+        ]
+        others = confused_with + [n for n in catalog.names() if n != tool_name and n not in confused_with]
+        proposal = propose_fix(
+            client, tool_name=tool_name, current_description=tool.description or "", other_tool_names=others
+        )
+        if proposal.rejected:
+            verdicts.append(FixVerdict(proposal, None))
+            continue
+        trial = run_mutation_trials(
+            matrix, catalog, adapter, tool_name=tool_name, new_description=proposal.new_description
+        )
+        verdicts.append(FixVerdict(proposal, trial))
+    return verdicts

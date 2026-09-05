@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from toolfit.connect.client import ToolCatalog
-from toolfit.fix.fixer import ProposedFix
+from toolfit.fix.fixer import FixVerdict, ProposedFix
 from toolfit.gen.taskgen import GeneratedTask
 from toolfit.grade.confusion import HALLUCINATED, NO_CALL, ConfusionMatrix
 from toolfit.grade.mutator import MutationResult, MutationTrialResult
@@ -148,6 +148,30 @@ def render_mutation_results(results: list[MutationTrialResult]) -> str:
             f"- p-value: {r.p_value:.4f}",
             f"- Verdict (Bonferroni-corrected): {verdict}",
         ]
+    return "\n".join(lines)
+
+
+def render_fix_results(verdicts: list[FixVerdict]) -> str:
+    """--fix section (design doc M4 / source doc §7): every proposal, accepted or not — showing the
+    rejected ones is what makes the accepted ones believable."""
+    lines = ["## Proposed Fixes"]
+    if not verdicts:
+        lines += ["", "No tool had a failed trial, so nothing to fix."]
+        return "\n".join(lines)
+    for v in verdicts:
+        lines += [
+            "",
+            f"### {v.proposal.tool_name} — {'ACCEPTED' if v.accepted else 'REJECTED'}",
+            f"- Before: {v.proposal.original_description!r}",
+            f"- After:  {v.proposal.new_description!r}",
+        ]
+        if v.trial is not None:
+            t = v.trial
+            n = len(t.before_passes)
+            lines += [
+                f"- Pass rate: {sum(t.before_passes)}/{n} → {sum(t.after_passes)}/{n}, p-value {t.p_value:.4f}",
+            ]
+        lines.append(f"- Reason: {v.reason}")
     return "\n".join(lines)
 
 

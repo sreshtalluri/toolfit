@@ -13,6 +13,7 @@ Typer stops collapsing on its own once there are two-or-more commands — see cl
 docstring history / task-3-report.md for the experiment.
 """
 
+import json
 import re
 from types import SimpleNamespace
 
@@ -24,6 +25,7 @@ from typer.testing import CliRunner
 import toolfit.cli as cli
 from toolfit.cli import app
 from toolfit.connect.client import ToolCatalog
+from toolfit.fix.fixer import FixVerdict, ProposedFix
 from toolfit.gen.taskgen import GeneratedTask
 from toolfit.grade.confusion import ConfusionMatrix, TrialRecord
 from toolfit.grade.mutator import MutationTrialResult
@@ -307,6 +309,47 @@ def test_eval_badge_writes_an_svg_file(monkeypatch, tmp_path, capsys):
     badge_path = tmp_path / "toolfit-badge.svg"
     assert badge_path.exists()
     assert "toolfit: 100%" in badge_path.read_text(encoding="utf-8")
+
+
+def test_eval_fix_reports_verdicts_writes_json_and_feeds_the_badge(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+
+    async def fake_fetch_catalog(params):
+        return ToolCatalog(tools=[Tool(name="tool_a", description="Does A.", inputSchema=_SIMPLE_SCHEMA)])
+
+    matrix = ConfusionMatrix(
+        counts={"tool_a": {"tool_a": 0, "(no call)": 2}},
+        distinct_trials={"tool_a": 2},
+        trials_per_tool={"tool_a": 2},
+        trials_by_tool={
+            "tool_a": [
+                TrialRecord(task=GeneratedTask(text="t1", tool_name="tool_a", arguments={}), passed=False),
+                TrialRecord(task=GeneratedTask(text="t2", tool_name="tool_a", arguments={}), passed=False),
+            ]
+        },
+        model="gpt-5.5",
+        generator_model="claude-sonnet-5",
+        seeds=2,
+    )
+    proposal = ProposedFix("tool_a", "Does A.", "Does A, given a title.", False, None)
+    trial = MutationTrialResult("tool_a", proposal.new_description, [False, False], [True, True], 0.001)
+
+    monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
+    monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds: matrix)
+    monkeypatch.setattr(cli, "run_fix_loop", lambda m, c, a, g: [FixVerdict(proposal, trial)])
+
+    result = runner.invoke(app, ["eval", "somepath", "--fix", "--badge", "--seeds", "2"])
+
+    assert result.exit_code == 0, result.output
+    assert "## Proposed Fixes" in result.output
+    assert "tool_a — ACCEPTED" in result.output
+    assert "smallest attainable p-value" in result.output  # --seeds 2 warning
+    fixes = json.loads((tmp_path / "toolfit-fixes.json").read_text(encoding="utf-8"))
+    assert fixes["fixes"][0]["accepted"] is True
+    assert fixes["fixes"][0]["after_description"] == "Does A, given a title."
+    assert "toolfit: 0% → 100%" in (tmp_path / "toolfit-badge.svg").read_text(encoding="utf-8")
 
 
 def test_eval_badge_mutate_and_strict_together_still_writes_the_badge_before_exiting(monkeypatch, tmp_path):

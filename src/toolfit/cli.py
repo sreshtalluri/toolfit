@@ -1,15 +1,13 @@
-"""Typer CLI: `toolfit eval <server_path>` (design doc Distribution Plan, M1 Design), extended in
-M2 with `--mutate` for paired mutation testing (design doc M2 Design §4). `toolfit scan
-<server_path>` (M0's static lint) now also exists as a real command, running free lint checks
-with no model calls; `fix`/`report` per the source doc's fuller architecture still come later
-(M4's fix loop). `--mutate` takes a hand-supplied description and reports a rigorous before/after
-verdict on it; it never generates a candidate description itself — that stays M4's fix loop
-(design doc M2 Design, "Explicitly out of scope").
+"""Typer CLI. `toolfit scan <server>` runs free static lint with no model calls. `toolfit eval
+<server>` builds the confusion matrix; `--mutate` re-measures a hand-supplied description,
+`--fix` (M4) proposes one per failing tool and re-measures it, `--badge` writes an SVG, `--strict`
+turns pass rates into exit codes for CI.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 
 import anthropic
@@ -17,12 +15,18 @@ import openai
 import typer
 
 from toolfit.connect.client import fetch_catalog, server_params
-from toolfit.grade.confusion import build_confusion_matrix
+from toolfit.fix.fixer import FixVerdict, run_fix_loop
+from toolfit.grade.confusion import ConfusionMatrix, build_confusion_matrix
 from toolfit.grade.mutator import MutationTrialResult, run_mutation_trials
 from toolfit.grade.significance import bonferroni_correct
 from toolfit.lint.rules import run_lint
 from toolfit.report.badge import render_badge
-from toolfit.report.render import render_confusion_matrix, render_lint_report, render_mutation_results
+from toolfit.report.render import (
+    render_confusion_matrix,
+    render_fix_results,
+    render_lint_report,
+    render_mutation_results,
+)
 from toolfit.run.adapters import build_adapter
 
 app = typer.Typer()
@@ -43,11 +47,17 @@ def eval(
         help="tool_name:new description (repeatable). Runs a paired mutation trial reusing the "
         "base eval's own generated tasks for that tool.",
     ),
+    fix: bool = typer.Option(
+        False,
+        "--fix",
+        help="For every tool with a failed trial, propose a rewritten description, re-run that tool's "
+        "tasks against it, and report the measured delta (accepted and rejected). Writes toolfit-fixes.json.",
+    ),
     badge: bool = typer.Option(
         False,
         "--badge",
         help="Write a static SVG badge (toolfit-badge.svg) summarizing the overall pass rate, or "
-        "a before/after delta if exactly one --mutate was tested.",
+        "a before/after delta if exactly one --mutate or accepted --fix was tested.",
     ),
     strict: bool = typer.Option(
         False, "--strict", help="Exit with code 1 if any tool's pass rate falls below --strict-threshold."
@@ -68,6 +78,7 @@ def eval(
             seeds=seeds,
             model=model,
             mutate=mutate,
+            fix=fix,
             badge=badge,
             strict=strict,
             strict_threshold=strict_threshold,
@@ -115,6 +126,33 @@ async def _run_scan(server_path: str, *, strict: bool) -> None:
         raise typer.Exit(code=1)
 
 
+def _write_fixes_json(matrix: ConfusionMatrix, verdicts: list[FixVerdict]) -> None:
+    # Machine-applicable counterpart of the markdown section: protocol-level description text only
+    # (design doc Premise 1) — nothing from the server's source, no keys, no transcripts.
+    payload = {
+        "model": matrix.model,
+        "generator_model": matrix.generator_model,
+        "seeds": matrix.seeds,
+        "fixes": [
+            {
+                "tool": v.proposal.tool_name,
+                "before_description": v.proposal.original_description,
+                "after_description": v.proposal.new_description,
+                "before_passed": sum(v.trial.before_passes) if v.trial else None,
+                "after_passed": sum(v.trial.after_passes) if v.trial else None,
+                "n": len(v.trial.before_passes) if v.trial else None,
+                "p_value": v.trial.p_value if v.trial else None,
+                "accepted": v.accepted,
+                "reason": v.reason,
+            }
+            for v in verdicts
+        ],
+    }
+    with open("toolfit-fixes.json", "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    typer.echo("Wrote toolfit-fixes.json", err=True)
+
+
 def _parse_mutation(spec: str) -> tuple[str, str]:
     if ":" not in spec:
         raise ValueError(f"--mutate value {spec!r} must be of the form 'tool_name:new description'")
@@ -130,6 +168,7 @@ async def _run_eval(
     seeds: int,
     model: str,
     mutate: list[str],
+    fix: bool,
     badge: bool,
     strict: bool,
     strict_threshold: float,
@@ -143,6 +182,16 @@ async def _run_eval(
         except ValueError as e:
             typer.echo(str(e), err=True)
             raise typer.Exit(code=1)
+
+    if (parsed_mutations or fix) and seeds < 10:
+        # Exact McNemar: with n paired trials the smallest attainable p-value is 1/2**n, and
+        # Bonferroni divides alpha further. Say so up front rather than let a run end in
+        # "not significant" verdicts that could never have been anything else.
+        typer.echo(
+            f"WARNING: with --seeds {seeds} the smallest attainable p-value is {1 / 2**seeds:.3f}; "
+            "mutation/fix verdicts need --seeds 10 or more to reach significance",
+            err=True,
+        )
 
     params = server_params(server_path)
     try:
@@ -212,18 +261,34 @@ async def _run_eval(
                 typer.echo(f"Model provider error during --mutate {tool_name!r}: {e}", err=True)
                 raise typer.Exit(code=1)
 
-        if results:
-            significances = bonferroni_correct([r.p_value for r in results])
-            for r, sig in zip(results, significances):
-                r.significant = sig
-            print()
-            print(render_mutation_results(results))
+    verdicts: list[FixVerdict] = []
+    if fix:
+        try:
+            verdicts = run_fix_loop(matrix, catalog, adapter, generator_client)
+        except (anthropic.APIError, openai.APIError) as e:
+            typer.echo(f"Model provider error during --fix: {e}", err=True)
+            raise typer.Exit(code=1)
+
+    # One Bonferroni correction across everything re-measured in this run — hand-supplied
+    # mutations and proposed fixes alike — so neither can cherry-pick a lenient threshold.
+    tested = results + [v.trial for v in verdicts if v.trial is not None]
+    for trial, sig in zip(tested, bonferroni_correct([t.p_value for t in tested])):
+        trial.significant = sig
+
+    if results:
+        print()
+        print(render_mutation_results(results))
+    if fix:
+        print()
+        print(render_fix_results(verdicts))
+        _write_fixes_json(matrix, verdicts)
 
     if badge:
-        # A badge is one flat number — with exactly one mutation tested, show its before/after
-        # delta; with zero or several, fall back to the overall pass rate rather than picking an
-        # arbitrary one of several mutations to represent.
-        mutation_result_for_badge = results[0] if len(results) == 1 else None
+        # A badge is one flat number — with exactly one delta measured (a --mutate or an accepted
+        # --fix), show it; otherwise fall back to the overall pass rate rather than pick one of
+        # several to represent.
+        deltas = results + [v.trial for v in verdicts if v.accepted and v.trial is not None]
+        mutation_result_for_badge = deltas[0] if len(deltas) == 1 else None
         svg = render_badge(matrix, mutation_result_for_badge)
         with open("toolfit-badge.svg", "w", encoding="utf-8") as f:
             f.write(svg)
