@@ -1,6 +1,6 @@
 [project]
 name = "toolfit"
-version = "0.0.1"
+version = "0.1.0"
 description = "Finds the specific places your MCP server confuses models, and proves a fix with a before-and-after eval."
 readme = "README.md"
 requires-python = ">=3.10"
