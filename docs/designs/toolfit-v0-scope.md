@@ -285,3 +285,11 @@ Detection layer: `check_solvability` and `check_no_leakage` graduate from the sp
 - **GitHub Action** (`action.yml`): `scan --strict` always; `eval --strict --badge` with `eval: true` + key; report and badge uploaded as artifacts. Repo CI (`.github/workflows/ci.yml`): pytest 3.10/3.13, `uv build`, keyless scan.
 - **`--strict` on schema-excluded tools stays warn-only.** Decided here rather than deferred again: a green gate that names what it skipped on stderr is better than a red gate on a server the harness could not evaluate — the latter would push people to drop `--strict` entirely.
 - **Not done:** PyPI upload (needs the maintainer's credentials; `uv build` verified clean at 0.1.0); model-graded eval across the corpus (per-server, with read-scoped tokens, by whoever wants that server's matrix — see corpus.md); the `(error)` column for truncation/malformed-JSON no-calls.
+
+## Real-server scenarios (2026-09-05)
+
+Three public servers evaluated end-to-end (`docs/corpus.md`, `docs/examples/`): server-memory 90/90, mcp-server-git 112/120, server-filesystem 77/140. Code changes they forced: retry on generator/solvability/fixer calls (a 429 there killed all three first attempts); integer samples for `number`; `deprecated_tool` lint rule; verdicts print p vs corrected α.
+
+**Finding that reshapes M5:** the dominant off-diagonal mass on real servers is *precondition* calls — `git_add` before `git_commit`, `list_allowed_directories` before any path operation. The model is correct and the single-step grader is strict. The matrix surfaces it cleanly (one column lights up), but the fix is not a description: it is either stating the precondition in the description ("paths are validated for you") or a multi-step harness that grades the *sequence*. That makes M5 (multi-turn) the next milestone with the strongest evidence behind it, ahead of failure injection.
+
+**Fix-loop guidance from the data:** Bonferroni across every proposal in a 14-tool catalog at n=10 cannot accept anything (α=0.004). Recommend `--fix` on the two or three tools the matrix names, at `--seeds 20`. `--fix-tool NAME` (repeatable) exists for exactly this.

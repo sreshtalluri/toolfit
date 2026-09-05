@@ -133,6 +133,7 @@ def run_fix_loop(
     catalog: ToolCatalog,
     adapter: ModelAdapter,
     client: anthropic.Anthropic,
+    only: set[str] | None = None,
 ) -> list[FixVerdict]:
     """M4 fix loop (design doc Pipeline: mutation output -> fix/ -> re-verify). For every tool with
     at least one failed trial: propose a rewrite, then re-run that tool's OWN base tasks against a
@@ -142,6 +143,8 @@ def run_fix_loop(
     """
     verdicts: list[FixVerdict] = []
     for tool_name, trials in matrix.trials_by_tool.items():
+        if only is not None and tool_name not in only:
+            continue
         if all(t.passed for t in trials):
             continue
         tool = catalog.get(tool_name)

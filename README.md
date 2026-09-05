@@ -72,6 +72,28 @@ Three things this run shows, none of them flattering, all of them the point:
   the exact test gives p=1.0 for a change in the wrong direction. Nothing gets reported as a
   finding because it looked good once.
 
+## On real servers
+
+Same command against three public servers, model under test `claude-sonnet-5`, 10 seeds per tool
+(full reports in [`docs/examples/`](docs/examples/)):
+
+| Server | Tools | Pass | What the matrix showed |
+|---|---|---|---|
+| `@modelcontextprotocol/server-memory` | 9 | **90/90** | Perfect diagonal. Nine crisp descriptions, zero warnings, nothing to fix. |
+| `mcp-server-git` | 12 | **112/120** | `git_commit` 4/10: five requests went to `git_add` first. The rewrite that stressed "commits *staged* changes" measured worse, 4→2, and was rejected. |
+| `@modelcontextprotocol/server-filesystem` | 14 | **77/140** | `read_file` 0/10 — its description says *DEPRECATED, use read_text_file* and the model obeys (`scan` now flags this). Thirty-plus requests across seven tools went to `list_allowed_directories` first. |
+
+The git and filesystem results share a cause that a description can't fix: **the model takes a
+correct precondition step** — stage before commit, check allowed directories before touching a
+path — and a single-step eval scores it as the wrong tool. That column in the confusion matrix is
+the finding; it tells you which tools need their precondition stated ("paths are validated for
+you") or a multi-step harness. toolfit does not paper over it by grading the first call leniently.
+
+Twelve rewrites were proposed for the filesystem server. Five improved the number (`8→10`,
+`6→8`); none were accepted, because one Bonferroni correction across twelve proposals at n=10
+sets α=0.004 and the report says so. Run `--fix-tool list_directory --fix-tool move_file
+--seeds 20` on the tools the matrix names, not `--fix` on the whole catalog at once.
+
 ## Two commands, two budgets
 
 | | `scan` | `eval` |

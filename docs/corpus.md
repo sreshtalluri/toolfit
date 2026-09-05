@@ -49,10 +49,35 @@ them means supplying a real (read-scoped) token via the environment — `toolfit
 environment through to the subprocess, so `STRIPE_SECRET_KEY=... toolfit scan "npx -y @stripe/mcp
 --tools=all"` is all it takes.
 
-## Not done here
+## Model-graded `eval` on three of them (2026-09-05)
 
-A model-graded `eval` across this corpus. Each server is ~`tools × seeds × 3` model calls plus the
-fix loop; at 166 tools and 10 seeds that is several thousand calls, and it should be run per
-server, with a read-scoped token where needed, by whoever wants that server's confusion matrix —
-not as one unscoped batch. The toy-server run in `docs/examples/` is the reference for what the
-output looks like.
+`toolfit eval "<launch>" --seeds 10 --fix --badge`, model under test `claude-sonnet-5`. Full
+reports, fixes JSON and badges in `docs/examples/<server>/`.
+
+| Server | Tools | Pass | Wall time | Rate-limit retries | Fixes proposed / accepted |
+|---|---|---|---|---|---|
+| server-memory | 9 | 90/90 (100%) | 7.5 min | 24, all recovered | 0 / — |
+| mcp-server-git | 12 | 112/120 (93%) | ~8 min | 15 | 3 / 0 |
+| server-filesystem | 14 | 77/140 (55%) | 22 min | — | 12 / 0 |
+
+What they taught, in order of how much code changed because of it:
+
+1. **Retry has to cover every model call, not just the model under test.** The first attempt at
+   all three died on a 429 raised inside task generation, which had no backoff. Fixed; the retry
+   ceiling went from 3 to 5 attempts (~31 s).
+2. **Precondition steps read as confusion.** `git_commit` → `git_add` (5/10), and
+   `list_allowed_directories` called first for `directory_tree`, `get_file_info`,
+   `list_directory`, `move_file`, `read_*` (4–8 each). The model is right; the single-step grader
+   is strict. The matrix column makes it obvious, which is the point of the matrix. A multi-step
+   harness (source doc M5) is the real answer.
+3. **`number` means integer in practice.** zod-generated schemas type `head`/`tail`/`max_count`
+   as `number`; sampling `76.22` produced tasks the solvability check rejected. Now integers.
+4. **Deprecated tools are a lint category.** `read_file` obeys its own "DEPRECATED" note: 0/10.
+   New `deprecated_tool` rule — the first static rule to fire on a mature public server.
+5. **Bonferroni across a whole catalog's proposals is unwinnable at n=10.** α=0.05/12=0.004
+   needs ≥8 discordant pairs all in one direction. The verdict now prints p vs corrected α.
+   Guidance: `--fix` per tool of interest with `--seeds 20`.
+
+Not done: the other twelve reachable servers, and any eval with a non-Anthropic model under test
+(`OPENROUTER_API_KEY` was empty). Each server is roughly `tools × seeds × 3` calls plus `seeds`
+per proposed fix.

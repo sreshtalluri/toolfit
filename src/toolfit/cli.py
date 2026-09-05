@@ -53,6 +53,12 @@ def eval(
         help="For every tool with a failed trial, propose a rewritten description, re-run that tool's "
         "tasks against it, and report the measured delta (accepted and rejected). Writes toolfit-fixes.json.",
     ),
+    fix_tool: list[str] = typer.Option(
+        [],
+        "--fix-tool",
+        help="With --fix, only propose fixes for these tools (repeatable). Fewer proposals means a "
+        "less severe multiple-comparison correction.",
+    ),
     badge: bool = typer.Option(
         False,
         "--badge",
@@ -78,7 +84,8 @@ def eval(
             seeds=seeds,
             model=model,
             mutate=mutate,
-            fix=fix,
+            fix=fix or bool(fix_tool),
+            fix_tool=set(fix_tool),
             badge=badge,
             strict=strict,
             strict_threshold=strict_threshold,
@@ -169,6 +176,7 @@ async def _run_eval(
     model: str,
     mutate: list[str],
     fix: bool,
+    fix_tool: set[str],
     badge: bool,
     strict: bool,
     strict_threshold: float,
@@ -264,7 +272,7 @@ async def _run_eval(
     verdicts: list[FixVerdict] = []
     if fix:
         try:
-            verdicts = run_fix_loop(matrix, catalog, adapter, generator_client)
+            verdicts = run_fix_loop(matrix, catalog, adapter, generator_client, only=fix_tool or None)
         except (anthropic.APIError, openai.APIError) as e:
             typer.echo(f"Model provider error during --fix: {e}", err=True)
             raise typer.Exit(code=1)

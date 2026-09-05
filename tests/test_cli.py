@@ -338,7 +338,7 @@ def test_eval_fix_reports_verdicts_writes_json_and_feeds_the_badge(monkeypatch, 
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
     monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds: matrix)
-    monkeypatch.setattr(cli, "run_fix_loop", lambda m, c, a, g: [FixVerdict(proposal, trial)])
+    monkeypatch.setattr(cli, "run_fix_loop", lambda m, c, a, g, only=None: [FixVerdict(proposal, trial)])
 
     result = runner.invoke(app, ["eval", "somepath", "--fix", "--badge", "--seeds", "2"])
 

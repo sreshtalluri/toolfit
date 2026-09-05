@@ -72,6 +72,20 @@ def test_run_fix_loop_only_targets_tools_with_a_failed_trial_and_reverifies_them
     assert adapter.calls == 3  # one re-run per base trial, nothing for the all-pass tools
 
 
+def test_run_fix_loop_only_restricts_which_failing_tools_are_proposed():
+    matrix = _matrix()
+    matrix.trials_by_tool["list_tasks"][0].passed = False  # now two tools fail
+    client = _fixer_client("A real replacement description.")
+    assert [v.proposal.tool_name for v in run_fix_loop(matrix, _catalog(), _AlwaysRightAdapter(), client)] == [
+        "update_task",
+        "list_tasks",
+    ]
+    assert [
+        v.proposal.tool_name
+        for v in run_fix_loop(matrix, _catalog(), _AlwaysRightAdapter(), client, only={"list_tasks"})
+    ] == ["list_tasks"]
+
+
 def test_run_fix_loop_lists_confused_with_tools_first_in_the_rewrite_prompt():
     seen = {}
 
