@@ -74,7 +74,24 @@ def _duplicate_description(catalog: ToolCatalog) -> list[LintFinding]:
     return findings
 
 
-_RULES = (_missing_description, _short_description, _duplicate_description)
+def _deprecated_description(catalog: ToolCatalog) -> list[LintFinding]:
+    # Found on @modelcontextprotocol/server-filesystem: `read_file` says "DEPRECATED: Use
+    # read_text_file instead" and Sonnet 5 obeys, scoring 0/10. A deprecated tool still in the
+    # catalog costs context tokens and shows up as confusion in every eval; drop it or hide it.
+    findings = []
+    for tool in catalog.tools:
+        if "deprecated" in (tool.description or "").casefold():
+            findings.append(
+                LintFinding(
+                    rule_id="deprecated_tool",
+                    tool_name=tool.name,
+                    message=f"{tool.name} describes itself as deprecated but is still in the catalog",
+                )
+            )
+    return findings
+
+
+_RULES = (_missing_description, _short_description, _duplicate_description, _deprecated_description)
 
 
 def run_lint(catalog: ToolCatalog) -> list[LintFinding]:

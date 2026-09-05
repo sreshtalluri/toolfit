@@ -118,6 +118,17 @@ def test_run_lint_groups_three_tools_sharing_one_description_into_a_single_findi
     assert all(name in duplicate_findings[0].message for name in ("a", "b", "c"))
 
 
+def test_run_lint_flags_a_tool_that_calls_itself_deprecated():
+    catalog = ToolCatalog(
+        tools=[
+            Tool(name="read_file", description="Read a file. DEPRECATED: Use read_text_file instead.", inputSchema={}),
+            Tool(name="read_text_file", description="Read the complete contents of a file as text.", inputSchema={}),
+        ]
+    )
+    findings = [f for f in run_lint(catalog) if f.rule_id == "deprecated_tool"]
+    assert [f.tool_name for f in findings] == ["read_file"]
+
+
 def test_run_lint_returns_no_findings_for_a_clean_catalog():
     catalog = _catalog(
         Tool(name="create_task", description="Add a new task to the user's list.", input_schema=_EMPTY_SCHEMA),

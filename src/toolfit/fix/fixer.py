@@ -124,7 +124,8 @@ class FixVerdict:
             return "rejected: made things worse"
         if after == before:
             return "rejected: no change"
-        return "rejected: improvement not significant after correction"
+        alpha = f" (p={self.trial.p_value:.3f} vs corrected α={self.trial.corrected_alpha:.4f})" if self.trial.corrected_alpha else ""
+        return f"rejected: improvement not significant after correction{alpha}"
 
 
 def run_fix_loop(

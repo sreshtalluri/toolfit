@@ -1,0 +1,150 @@
+{
+  "model": "claude-sonnet-5",
+  "generator_model": "claude-sonnet-5",
+  "seeds": 10,
+  "fixes": [
+    {
+      "tool": "read_file",
+      "before_description": "Read the complete contents of a file as text. DEPRECATED: Use read_text_file instead.",
+      "after_description": "**DEPRECATED \u2014 use read_text_file instead.** Reads the complete text contents of a single file given its `path`, optionally limited to only the first N lines (`head`) or last N lines (`tail`); works only within allowed directories.",
+      "before_passed": 0,
+      "after_passed": 0,
+      "n": 10,
+      "p_value": 1.0,
+      "accepted": false,
+      "reason": "rejected: no change"
+    },
+    {
+      "tool": "read_text_file",
+      "before_description": "Read the complete contents of a file from the file system as text. Handles various text encodings and provides detailed error messages if the file cannot be read. Use this tool when you need to examine the contents of a single file. Use the 'head' parameter to read only the first N lines of a file, or the 'tail' parameter to read only the last N lines of a file. Operates on the file as text regardless of extension. Only works within allowed directories.",
+      "after_description": "Read the complete text contents of a single file at the given `path` (within allowed directories), optionally limited to only the first `head` lines or only the last `tail` lines, distinguishing it from `read_file` (its deprecated equivalent), `read_media_file` (for binary/media files), and `read_multiple_files` (for reading several files at once).",
+      "before_passed": 0,
+      "after_passed": 0,
+      "n": 10,
+      "p_value": 1.0,
+      "accepted": false,
+      "reason": "rejected: no change"
+    },
+    {
+      "tool": "read_media_file",
+      "before_description": "Read a file and return it as a base64-encoded content block with its MIME type. Image and audio files are returned as image/audio content; any other file type is returned as an embedded resource. Only works within allowed directories.",
+      "after_description": "Reads a file (given its required \"path\" parameter) and returns its raw content base64-encoded as an image, audio, or embedded-resource content block based on MIME type\u2014unlike read_text_file/read_file, which return plain text content; only works within allowed directories.",
+      "before_passed": 6,
+      "after_passed": 6,
+      "n": 10,
+      "p_value": 0.6875,
+      "accepted": false,
+      "reason": "rejected: no change"
+    },
+    {
+      "tool": "read_multiple_files",
+      "before_description": "Read the contents of multiple files simultaneously. This is more efficient than reading files one by one when you need to analyze or compare multiple files. Each file's content is returned with its path as a reference. Failed reads for individual files won't stop the entire operation. Only works within allowed directories.",
+      "after_description": "Read the complete contents of several files at once by providing an array of file paths, returning each file's content labeled by its path, with failures on individual files not aborting the rest of the batch \u2014 unlike read_text_file or read_file, which read only one file at a time. Parameters: paths (array, required).",
+      "before_passed": 2,
+      "after_passed": 2,
+      "n": 10,
+      "p_value": 0.75,
+      "accepted": false,
+      "reason": "rejected: no change"
+    },
+    {
+      "tool": "write_file",
+      "before_description": "Create a new file or completely overwrite an existing file with new content. Use with caution as it will overwrite existing files without warning. Handles text content with proper encoding. Only works within allowed directories.",
+      "after_description": "Creates a new file or completely overwrites an existing file's entire contents at the given path (string, required) with the provided content (string, required), unlike edit_file which only modifies specific line sequences within an existing file.",
+      "before_passed": 8,
+      "after_passed": 9,
+      "n": 10,
+      "p_value": 0.5,
+      "accepted": false,
+      "reason": "rejected: improvement not significant after correction"
+    },
+    {
+      "tool": "edit_file",
+      "before_description": "Make line-based edits to a text file. Each edit replaces exact line sequences with new content. Returns a git-style diff showing the changes made. Only works within allowed directories.",
+      "after_description": "Make targeted line-based text replacements within an existing file by supplying `path` and an `edits` array specifying exact line sequences to replace, optionally previewing changes with `dryRun` before applying, returning a git-style diff (unlike write_file, which overwrites the entire file's contents).",
+      "before_passed": 9,
+      "after_passed": 8,
+      "n": 10,
+      "p_value": 1.0,
+      "accepted": false,
+      "reason": "rejected: made things worse"
+    },
+    {
+      "tool": "create_directory",
+      "before_description": "Create a new directory or ensure a directory exists. Can create multiple nested directories in one operation. If the directory already exists, this operation will succeed silently. Perfect for setting up directory structures for projects or ensuring required paths exist. Only works within allowed directories.",
+      "after_description": "Create a new directory (or nested directories) at the specified path, succeeding silently if it already exists, without reading, writing, or listing any files; requires a single parameter, path (string, required), and only works within allowed directories.",
+      "before_passed": 8,
+      "after_passed": 10,
+      "n": 10,
+      "p_value": 0.25,
+      "accepted": false,
+      "reason": "rejected: improvement not significant after correction"
+    },
+    {
+      "tool": "list_directory",
+      "before_description": "Get a detailed listing of all files and directories in a specified path. Results clearly distinguish between files and directories with [FILE] and [DIR] prefixes. This tool is essential for understanding directory structure and finding specific files within a directory. Only works within allowed directories.",
+      "after_description": "Lists the names of files and directories (with [FILE]/[DIR] prefixes) at a given path, without file sizes \u2014 use `list_directory_with_sizes` instead if size information is needed. Requires a single argument: `path` (string, required).",
+      "before_passed": 2,
+      "after_passed": 3,
+      "n": 10,
+      "p_value": 0.5,
+      "accepted": false,
+      "reason": "rejected: improvement not significant after correction"
+    },
+    {
+      "tool": "list_directory_with_sizes",
+      "before_description": "Get a detailed listing of all files and directories in a specified path, including sizes. Results clearly distinguish between files and directories with [FILE] and [DIR] prefixes. This tool is useful for understanding directory structure and finding specific files within a directory. Only works within allowed directories.",
+      "after_description": "Lists all files and directories at the given `path` (required), annotating each entry with its size and a [FILE] or [DIR] prefix, and can be ordered via the optional `sortBy` parameter (\"name\" or \"size\") \u2014 unlike plain `list_directory`, which omits size information.",
+      "before_passed": 8,
+      "after_passed": 3,
+      "n": 10,
+      "p_value": 0.9921875,
+      "accepted": false,
+      "reason": "rejected: made things worse"
+    },
+    {
+      "tool": "directory_tree",
+      "before_description": "Get a recursive tree view of files and directories as a JSON structure. Each entry includes 'name', 'type' (file/directory), and 'children' for directories. Files have no children array, while directories always have a children array (which may be empty). The output is formatted with 2-space indentation for readability. Only works within allowed directories.",
+      "after_description": "Recursively lists the directory structure at the given required `path` as an indented, JSON-formatted tree (each entry has 'name', 'type', and 'children' for directories), optionally excluding paths matching the optional `excludePatterns` array \u2014 unlike `list_directory`/`list_directory_with_sizes`, which return only a single-level flat listing.",
+      "before_passed": 6,
+      "after_passed": 8,
+      "n": 10,
+      "p_value": 0.3125,
+      "accepted": false,
+      "reason": "rejected: improvement not significant after correction"
+    },
+    {
+      "tool": "move_file",
+      "before_description": "Move or rename files and directories. Can move files between directories and rename them in a single operation. If the destination exists, the operation will fail. Works across different directories and can be used for simple renaming within the same directory. Both source and destination must be within allowed directories.",
+      "after_description": "Move or rename a single file or directory by specifying its exact source path and destination path (both must be within allowed directories); the operation fails if the destination already exists.",
+      "before_passed": 5,
+      "after_passed": 5,
+      "n": 10,
+      "p_value": 0.65625,
+      "accepted": false,
+      "reason": "rejected: no change"
+    },
+    {
+      "tool": "search_files",
+      "before_description": "Recursively search for files and directories matching a pattern. The patterns should be glob-style patterns that match paths relative to the working directory. Use pattern like '*.ext' to match files in current directory, and '**/*.ext' to match files in all subdirectories. Returns full paths to all matching items. Great for finding files when you don't know their exact location. Only searches within allowed directories.",
+      "after_description": "Search recursively for files/directories whose paths match a glob pattern (e.g., '*.ext' or '**/*.ext') within allowed directories, returning full paths of all matches; requires path (base directory to search) and pattern (glob pattern), with optional excludePatterns (array of glob patterns to exclude) \u2014 unlike read/list tools, this locates files by name pattern rather than reading or listing contents.",
+      "before_passed": 7,
+      "after_passed": 7,
+      "n": 10,
+      "p_value": 1.0,
+      "accepted": false,
+      "reason": "rejected: no change"
+    },
+    {
+      "tool": "get_file_info",
+      "before_description": "Retrieve detailed metadata about a file or directory. Returns comprehensive information including size, creation time, last modified time, permissions, and type. This tool is perfect for understanding file characteristics without reading the actual content. Only works within allowed directories.",
+      "after_description": "Retrieve metadata only (not contents) for a single file or directory at the given path\u2014including size, creation time, last modified time, permissions, and type\u2014without reading the file's actual content; requires parameter: path (string, required).",
+      "before_passed": 6,
+      "after_passed": 7,
+      "n": 10,
+      "p_value": 0.5,
+      "accepted": false,
+      "reason": "rejected: improvement not significant after correction"
+    }
+  ]
+}

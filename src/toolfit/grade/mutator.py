@@ -63,6 +63,7 @@ class MutationTrialResult:
     significant: bool = False  # set by the caller after Bonferroni-correcting across every
     # mutation tested together in one CLI invocation — this dataclass doesn't correct itself,
     # since correction depends on how many other mutations ran alongside it (design doc M2 §1).
+    corrected_alpha: float | None = None  # alpha / number of tests in this run, set by the caller
 
 
 def run_mutation_trials(

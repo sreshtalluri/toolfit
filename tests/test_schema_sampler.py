@@ -128,7 +128,7 @@ def test_sample_arguments_generates_integer_number_and_boolean():
     }
     result = sample_arguments(schema, seed=1)
     assert isinstance(result["count"], int)
-    assert isinstance(result["score"], float)
+    assert isinstance(result["score"], int)  # integers are valid numbers and read naturally in tasks
     assert isinstance(result["active"], bool)
 
 

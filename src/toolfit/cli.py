@@ -274,6 +274,7 @@ async def _run_eval(
     tested = results + [v.trial for v in verdicts if v.trial is not None]
     for trial, sig in zip(tested, bonferroni_correct([t.p_value for t in tested])):
         trial.significant = sig
+        trial.corrected_alpha = 0.05 / len(tested)
 
     if results:
         print()

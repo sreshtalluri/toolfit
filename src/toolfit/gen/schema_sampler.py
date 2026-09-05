@@ -109,7 +109,9 @@ def _sample_value(prop_name: str, prop_schema: dict, rng: random.Random) -> Any:
         return rng.randint(1, 100)
 
     if prop_type == "number":
-        return round(rng.uniform(0, 100), 2)
+        # An integer is a valid `number`, and zod-generated MCP schemas type counts (`head`,
+        # `tail`, `max_count`) as `number`; "read the first 76.22 lines" is not a task anyone sends.
+        return rng.randint(1, 100)
 
     if prop_type == "boolean":
         return rng.choice([True, False])
