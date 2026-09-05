@@ -40,7 +40,11 @@ def _describe_parameters(input_schema: dict | None) -> str:
             kind = "/".join(map(str, kind))
         elif not kind:
             branches = prop.get("anyOf") or prop.get("oneOf") or []
-            kind = "one of " + "/".join(str(b.get("type", "?")) for b in branches) if branches else "any"
+            kind = (
+                "one of " + "/".join(str(b.get("type") or ("object" if "$ref" in b else "?")) for b in branches)
+                if branches
+                else ("object" if "$ref" in prop else "any")
+            )
         detail = f", values: {', '.join(map(str, prop['enum']))}" if "enum" in prop else ""
         parts.append(f"{name} ({kind}{', required' if name in required else ', optional'}{detail})")
     return "; ".join(parts)

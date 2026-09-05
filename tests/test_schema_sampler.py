@@ -166,24 +166,23 @@ def test_sample_arguments_picks_one_branch_of_anyof():
     assert len(results) == 2  # both branches actually got hit across 20 seeds
 
 
-def test_sample_arguments_rejects_ref():
+def test_sample_arguments_rejects_an_unresolvable_ref():
     schema = {
         "type": "object",
         "properties": {"thing": {"$ref": "#/definitions/Thing"}},
         "required": ["thing"],
     }
-    with pytest.raises(ValueError, match=r"\$ref.*not supported"):
+    with pytest.raises(ValueError, match=r"unresolvable \$ref"):
         sample_arguments(schema, seed=1)
 
 
-def test_sample_arguments_rejects_allof():
+def test_sample_arguments_merges_a_single_branch_allof():
     schema = {
         "type": "object",
-        "properties": {"thing": {"allOf": [{"type": "string"}]}},
+        "properties": {"thing": {"allOf": [{"type": "string", "enum": ["only"]}], "description": "d"}},
         "required": ["thing"],
     }
-    with pytest.raises(ValueError, match="allOf.*not supported"):
-        sample_arguments(schema, seed=1)
+    assert sample_arguments(schema, seed=1) == {"thing": "only"}
 
 
 def test_sample_arguments_always_includes_required_and_sometimes_omits_optional():
@@ -220,6 +219,39 @@ def test_sample_arguments_honours_numeric_bounds():
         assert 0 <= r["temperature"] <= 1
         assert r["page"] in (1, 2, 3)
         assert 0.5 <= r["ratio"] <= 0.75
+
+
+def test_sample_arguments_resolves_pydantic_style_refs_and_all_of():
+    # Exactly what `mcp` emits for `address: Address | None` on a pydantic model.
+    schema = {
+        "type": "object",
+        "$defs": {
+            "Address": {
+                "type": "object",
+                "properties": {"city": {"type": "string"}, "country": {"type": "string", "enum": ["US"]}},
+                "required": ["city", "country"],
+            }
+        },
+        "properties": {
+            "address": {"anyOf": [{"$ref": "#/$defs/Address"}, {"type": "null"}]},
+            "billing": {"allOf": [{"$ref": "#/$defs/Address"}], "description": "billing address"},
+        },
+        "required": ["address", "billing"],
+    }
+    seen = set()
+    for seed in range(1, 20):
+        r = sample_arguments(schema, seed=seed)
+        assert set(r["billing"]) == {"city", "country"} and r["billing"]["country"] == "US"
+        seen.add(None if r["address"] is None else "obj")
+        if r["address"] is not None:
+            assert r["address"]["country"] == "US"
+    assert seen == {None, "obj"}
+
+
+def test_sample_arguments_rejects_a_remote_ref():
+    schema = {"type": "object", "properties": {"x": {"$ref": "https://example.com/s.json"}}, "required": ["x"]}
+    with pytest.raises(ValueError, match="local"):
+        sample_arguments(schema, seed=1)
 
 
 def test_sample_arguments_recurses_into_nested_objects():

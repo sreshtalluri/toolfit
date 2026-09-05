@@ -1,0 +1,40 @@
+{
+  "model": "claude-sonnet-5",
+  "generator_model": "claude-sonnet-5",
+  "seeds": 10,
+  "fixes": [
+    {
+      "tool": "update_contact",
+      "before_description": "Update contact.",
+      "after_description": "Update an existing contact's stored details by specifying its contact_id, optionally changing full_name and/or company, without creating, fetching, searching, listing, deleting, emailing, or adding notes to the contact.",
+      "before_passed": 5,
+      "after_passed": 4,
+      "n": 10,
+      "p_value": 1.0,
+      "accepted": false,
+      "reason": "rejected: made things worse"
+    },
+    {
+      "tool": "search_contacts",
+      "before_description": "Find contacts.",
+      "after_description": "Search for existing contacts whose fields match a given text query, returning up to an optional limit of results, unlike get_contact (which fetches a single contact by its id) or list_contacts (which browses/lists contacts rather than matching a query).",
+      "before_passed": 8,
+      "after_passed": 9,
+      "n": 10,
+      "p_value": 0.5,
+      "accepted": false,
+      "reason": "rejected: improvement not significant after correction (p=0.500 vs corrected \u03b1=0.0125)"
+    },
+    {
+      "tool": "send_email",
+      "before_description": "Send an email to the contact, optionally scheduled for a later send_at time.",
+      "after_description": "Sends an email (with required subject and body) to an existing contact identified by contact_id, optionally deferring delivery until the specified send_at time instead of sending immediately.",
+      "before_passed": 7,
+      "after_passed": 5,
+      "n": 10,
+      "p_value": 1.0,
+      "accepted": false,
+      "reason": "rejected: made things worse"
+    }
+  ]
+}
