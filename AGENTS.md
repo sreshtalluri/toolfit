@@ -155,7 +155,11 @@ the directory where the user wants them. The report is stdout; warnings and prog
    on one tool usually mean the *catalog* is ambiguous (that's the finding) or the schema allows
    combinations the server doesn't (e.g. `head` and `tail` together).
 5. **Schema Warnings** — tools excluded because the sampler couldn't produce arguments. They are
-   **not** in any number above and don't trip `--strict`; `--strict` prints them on stderr.
+   **not** in any number above and don't trip `--strict`; `--strict` prints them on stderr. The
+   sampler handles enums, formats, nullables, nested objects, arrays, numeric bounds, and local
+   `$ref`/`allOf` (pydantic nested models); what still excludes a tool is a `pattern` regex, a
+   remote `$ref`, or a missing `items` on an array. Tell the user which tool and why — it's in
+   the warning text.
 6. **Mutation Results / Proposed Fixes** — per tool: before → after pass counts, exact one-sided
    McNemar p-value, and a verdict. `ACCEPTED` requires significance after correction **and** a
    higher pass count. Rejections are printed with the reason: `made things worse`, `no net change`,
@@ -181,11 +185,20 @@ export ANTHROPIC_API_KEY=…
 toolfit scan examples/toy_server.py                 # 2 duplicate-description findings
 toolfit scan --strict examples/crm_server.py        # 4 findings, exit 1
 toolfit eval examples/toy_server.py --seeds 10 --fix --badge
-toolfit eval examples/crm_server.py --seeds 10 --fix-tool search_contacts --fix-tool list_contacts --badge
+toolfit eval examples/crm_server.py --seeds 10 \
+  --mutate "search_contacts:Full-text search across contacts by name, email or company; returns up to limit matches." \
+  --fix-tool search_contacts --fix-tool update_contact --fix-tool send_email \
+  --badge --strict --strict-threshold 0.8
 ```
 
 Reference outputs to compare against: `docs/examples/toy-server/`, `docs/examples/crm-server/`,
-and three public servers under `docs/examples/`.
+and three public servers under `docs/examples/`. The CRM command above took 268 s on Sonnet 5 and
+exits 1 (that's `--strict` doing its job: `get_contact` 70%, `send_email` 70%, `update_contact`
+50%). Its matrix shows the two things worth pointing out to a user: `get_contact` → 3 calls to
+`search_contacts` (the model obeying the deprecation note), and `update_contact` at 8/10 on tool
+choice but 5/10 on pass — the misses are argument-level, so the fix loop's rewrite of a
+15-character description measured *worse* (5→4) and was rejected. Nothing gets accepted on a
+strong model against a catalog this small; that's expected, not a failure.
 
 ## 6. CI
 
