@@ -112,6 +112,15 @@ choice is verifiable. The confusion matrix still shows the first call, so 0.1.x 
 comparable; `--max-steps 1` reproduces them exactly. Cost: roughly 2× the wall time on servers
 where the model actually chains.
 
+The filesystem server tells the other half of the story
+([`docs/examples/server-filesystem-multistep/`](docs/examples/server-filesystem-multistep/)):
+**55% → 79%**, but not uniformly. Tools that were losing to a precondition went to 5/5
+(`create_directory`, `get_file_info`, `move_file`, `directory_tree`); tools failing on *arguments*
+stayed put (`read_multiple_files` 0/5), and the deprecated `read_file` stayed at 0. The graph shows
+`list_allowed_directories` feeding eleven tools and `search_files` feeding three as a lookup step.
+That's the grader telling precondition problems apart from description problems — which is what
+you need to know before rewriting anything.
+
 Twelve rewrites were proposed for the filesystem server. Five improved the number (`8→10`,
 `6→8`); none were accepted, because one Bonferroni correction across twelve proposals at n=10
 sets α=0.004 and the report says so. Run `--fix-tool list_directory --fix-tool move_file

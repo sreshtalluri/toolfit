@@ -60,6 +60,7 @@ reports, fixes JSON and badges in `docs/examples/<server>/`.
 | mcp-server-git | 12 | 112/120 (93%) | ~8 min | 15 | 3 / 0 |
 | server-filesystem | 14 | 77/140 (55%) | 22 min | — | 12 / 0 |
 | mcp-server-git, **0.2.0 `--max-steps 3`** | 12 | 119/120 (99%) | 20 min | — | 0 / — (`git_commit` 4/10 → 10/10; `git_add → git_commit` 7/10 flagged as undeclared) |
+| server-filesystem, **0.2.0 `--max-steps 3`**, 5 seeds | 14 | 55/70 (79%) | 12 min | — | — (precondition-bound tools → 5/5; argument-bound ones unchanged; `list_allowed_directories` → 11 tools, `search_files` → 3; 7 undeclared) |
 
 What they taught, in order of how much code changed because of it:
 

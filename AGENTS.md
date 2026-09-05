@@ -251,6 +251,11 @@ exists anywhere and none is needed.
   those) or precondition calls (§4, 1a — those now *pass* with the default `--max-steps 3`).
 - **Pass rates higher than a 0.1.x run of the same server.** Expected: 0.2.0 grades multi-step.
   Re-run with `--max-steps 1` if you need the old number.
+- **An "undeclared precondition" the user thinks *is* declared.** The check matches the earlier
+  tool's *name* in the target's description. server-filesystem says "Only works within allowed
+  directories" on every tool and still gets flagged for `list_allowed_directories`, because the
+  prose never names the tool a model would call to find out. Naming it is what makes the hint
+  actionable; that's the recommendation to give.
 - **`count`-style tools at 0/10.** The generator tends to phrase count requests as "show me…";
   known limitation, documented in the design doc.
 - **`p=1.0000` on a "worse" result.** Correct: the test is one-sided for improvement.
