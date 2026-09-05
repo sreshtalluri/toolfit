@@ -1,0 +1,6 @@
+{
+  "model": "claude-sonnet-5",
+  "generator_model": "claude-sonnet-5",
+  "seeds": 10,
+  "fixes": []
+}

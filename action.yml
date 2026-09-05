@@ -1,0 +1,66 @@
+name: toolfit
+description: Lint (free) and optionally eval (model-graded) an MCP server's tool descriptions in CI.
+branding:
+  icon: check-circle
+  color: green
+
+inputs:
+  server:
+    description: "MCP server: a .py script (run via uv), an http(s):// URL, or a command line like 'npx -y @modelcontextprotocol/server-github'."
+    required: true
+  eval:
+    description: "Also run the model-graded eval (costs API calls). Requires anthropic-api-key."
+    required: false
+    default: "false"
+  seeds:
+    description: "Tasks generated per tool for eval."
+    required: false
+    default: "10"
+  model:
+    description: "Model under test for eval."
+    required: false
+    default: "claude-sonnet-5"
+  strict-threshold:
+    description: "Minimum per-tool pass rate for eval to exit 0."
+    required: false
+    default: "0.9"
+  anthropic-api-key:
+    description: "Needed for eval (task generation always uses Anthropic)."
+    required: false
+  openai-api-key:
+    required: false
+  openrouter-api-key:
+    required: false
+  version:
+    description: "toolfit version to run via uvx."
+    required: false
+    default: "latest"
+
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@v5
+    - name: toolfit scan
+      shell: bash
+      run: uvx "toolfit@${{ inputs.version }}" scan --strict "${{ inputs.server }}"
+    - name: toolfit eval
+      if: inputs.eval == 'true'
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
+      run: |
+        uvx "toolfit@${{ inputs.version }}" eval --strict --badge \
+          --seeds "${{ inputs.seeds }}" --model "${{ inputs.model }}" \
+          --strict-threshold "${{ inputs.strict-threshold }}" \
+          "${{ inputs.server }}" | tee toolfit-report.md
+    - name: upload report and badge
+      if: inputs.eval == 'true' && always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: toolfit
+        path: |
+          toolfit-report.md
+          toolfit-badge.svg
+        if-no-files-found: ignore

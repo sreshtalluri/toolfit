@@ -1,0 +1,49 @@
+[project]
+name = "toolfit"
+version = "0.1.0"
+description = "Finds the specific places your MCP server confuses models, and proves a fix with a before-and-after eval."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Sreshta Talluri" }]
+keywords = ["mcp", "model-context-protocol", "llm", "eval", "testing", "agents"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = [
+    "mcp>=2.0,<3",
+    "anthropic>=0.40",
+    "openai>=1.50",
+    "pydantic>=2.0",
+    "typer>=0.12",
+]
+
+[project.urls]
+Repository = "https://github.com/sreshtalluri/toolfit"
+
+[project.scripts]
+toolfit = "toolfit.cli:app"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/toolfit"]

@@ -1,0 +1,40 @@
+{
+  "model": "claude-sonnet-5",
+  "generator_model": "claude-sonnet-5",
+  "seeds": 10,
+  "fixes": [
+    {
+      "tool": "git_status",
+      "before_description": "Shows the working tree status",
+      "after_description": "Displays a summary of the repository's current state at repo_path, listing tracked/untracked and staged/unstaged file changes without showing diff content, branch lists, or commit history.",
+      "before_passed": 9,
+      "after_passed": 10,
+      "n": 10,
+      "p_value": 0.5,
+      "accepted": false,
+      "reason": "rejected: improvement not significant after correction"
+    },
+    {
+      "tool": "git_commit",
+      "before_description": "Records changes to the repository",
+      "after_description": "Records a new commit in the Git repository at repo_path by permanently saving the currently staged changes (as added via git_add) along with the provided commit message, distinguishing it from git_add (which only stages changes) and git_status/git_diff variants (which only inspect changes without committing them).",
+      "before_passed": 4,
+      "after_passed": 2,
+      "n": 10,
+      "p_value": 1.0,
+      "accepted": false,
+      "reason": "rejected: made things worse"
+    },
+    {
+      "tool": "git_log",
+      "before_description": "Shows the commit logs",
+      "after_description": "Retrieves the commit history for the repository at the given required `repo_path`, optionally limited to the most recent `max_count` commits and/or filtered to commits made between the optional `start_timestamp` and `end_timestamp`, unlike `git_show` (which displays the full contents of a single specified commit) or `git_diff`/`git_diff_staged`/`git_diff_unstaged` (which show line-level changes rather than a list of commits).",
+      "before_passed": 9,
+      "after_passed": 9,
+      "n": 10,
+      "p_value": 1.0,
+      "accepted": false,
+      "reason": "rejected: no change"
+    }
+  ]
+}
