@@ -6,7 +6,6 @@ Python values, so it's fully covered by offline TDD.
 from __future__ import annotations
 
 import math
-import random
 
 # z-scores for the two-sided confidence levels this project uses. A closed-form inverse-normal-CDF
 # approximation would be overkill for three fixed lookups.
@@ -32,31 +31,26 @@ def wilson_interval(successes: int, n: int, *, confidence: float = 0.95) -> tupl
     return (max(0.0, center - margin), min(1.0, center + margin))
 
 
-def paired_bootstrap_pvalue(
-    before: list[bool], after: list[bool], *, resamples: int = 10000, seed: int = 0
-) -> float:
-    """One-sided paired bootstrap test for improvement: resamples the paired (before, after)
-    outcomes with replacement `resamples` times, and returns the fraction of resamples whose
-    delta (sum(after) - sum(before)) is <= 0. A small p-value means most of the bootstrap
-    distribution shows a real improvement — strong evidence 'after' is better than 'before'.
-    Requires paired, non-empty input.
+def paired_exact_pvalue(before: list[bool], after: list[bool]) -> float:
+    """One-sided exact McNemar (sign) test for improvement on paired pass/fail outcomes.
+
+    Only discordant pairs carry information: under the null, each fail->pass is as likely as each
+    pass->fail, so the p-value is P(X >= improvements | k discordant, p=0.5). Deterministic, and
+    honest at small n: 3 fail->pass with 2 ties gives 0.125, never "significant". A paired
+    bootstrap over the same data resampled the ties and reported 0.010 — anti-conservative in
+    exactly the low-seed runs this CLI defaults to.
     """
     if len(before) != len(after):
         raise ValueError(f"before and after must be paired (same length): {len(before)} vs {len(after)}")
     if len(before) == 0:
         raise ValueError("cannot run a significance test with zero trials")
 
-    n = len(before)
-    rng = random.Random(seed)
-    non_positive_deltas = 0
-    for _ in range(resamples):
-        delta = 0
-        for _ in range(n):
-            i = rng.randrange(n)
-            delta += int(after[i]) - int(before[i])
-        if delta <= 0:
-            non_positive_deltas += 1
-    return non_positive_deltas / resamples
+    improvements = sum(1 for b, a in zip(before, after) if a and not b)
+    regressions = sum(1 for b, a in zip(before, after) if b and not a)
+    k = improvements + regressions
+    if k == 0:
+        return 1.0
+    return sum(math.comb(k, j) for j in range(improvements, k + 1)) / 2**k
 
 
 def bonferroni_correct(p_values: list[float], *, alpha: float = 0.05) -> list[bool]:

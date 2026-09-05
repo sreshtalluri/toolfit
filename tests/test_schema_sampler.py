@@ -186,6 +186,40 @@ def test_sample_arguments_rejects_allof():
         sample_arguments(schema, seed=1)
 
 
+def test_sample_arguments_always_includes_required_and_sometimes_omits_optional():
+    schema = {
+        "type": "object",
+        "properties": {"title": {"type": "string"}, "notes": {"type": "string"}},
+        "required": ["title"],
+    }
+    samples = [sample_arguments(schema, seed=s) for s in range(1, 21)]
+    assert all("title" in s for s in samples)
+    with_notes = sum("notes" in s for s in samples)
+    assert 0 < with_notes < 20
+
+
+def test_sample_arguments_handles_list_typed_nullable():
+    schema = {"type": "object", "properties": {"x": {"type": ["string", "null"]}}, "required": ["x"]}
+    results = {sample_arguments(schema, seed=s)["x"] for s in range(1, 21)}
+    assert None in results
+    assert any(isinstance(r, str) for r in results)
+
+
+def test_sample_arguments_recurses_into_nested_objects():
+    schema = {
+        "type": "object",
+        "properties": {
+            "filter": {
+                "type": "object",
+                "properties": {"status": {"type": "string", "enum": ["open"]}},
+                "required": ["status"],
+            }
+        },
+        "required": ["filter"],
+    }
+    assert sample_arguments(schema, seed=1) == {"filter": {"status": "open"}}
+
+
 def test_count_distinct_handles_array_valued_arguments():
     # Lists aren't hashable directly — count_distinct must handle this without raising.
     assert count_distinct([{"tags": ["a", "b"]}, {"tags": ["a", "b"]}, {"tags": ["c"]}]) == 2

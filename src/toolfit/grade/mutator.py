@@ -10,7 +10,7 @@ from toolfit.connect.client import ToolCatalog
 from toolfit.gen.taskgen import GeneratedTask
 from toolfit.grade.confusion import ConfusionMatrix
 from toolfit.grade.grader import GradeResult, grade
-from toolfit.grade.significance import paired_bootstrap_pvalue
+from toolfit.grade.significance import paired_exact_pvalue
 from toolfit.run.adapters import ModelAdapter
 
 
@@ -90,7 +90,7 @@ def run_mutation_trials(
         result = grade(trial.task, call, catalog_tool_names=patched_catalog.names())
         after_passes.append(result.passed)
 
-    p_value = paired_bootstrap_pvalue(before_passes, after_passes)
+    p_value = paired_exact_pvalue(before_passes, after_passes)
     return MutationTrialResult(
         tool_name=tool_name,
         new_description=new_description,

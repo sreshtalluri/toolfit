@@ -109,7 +109,7 @@ def test_run_mutation_trials_reuses_matrix_trials_as_before_and_only_calls_adapt
     assert result.before_passes == [False, False]  # read straight from the matrix, not re-run
     assert result.after_passes == [True, True]
     assert adapter.calls == 2  # exactly one call per trial for 'after' — no repeat 'before' call
-    assert result.p_value == 0.0  # every resample shows full improvement
+    assert result.p_value == 0.25  # exact test: 2 fail->pass, 0 pass->fail -> 1/2^2
     assert result.significant is False  # caller sets this after Bonferroni-correcting, not this function
 
 

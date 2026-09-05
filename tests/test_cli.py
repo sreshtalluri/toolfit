@@ -16,6 +16,8 @@ docstring history / task-3-report.md for the experiment.
 import re
 from types import SimpleNamespace
 
+import anthropic
+import httpx2
 from mcp.types import Tool
 from typer.testing import CliRunner
 
@@ -93,6 +95,36 @@ def test_eval_reports_a_clear_error_when_anthropic_api_key_is_missing_for_genera
     assert "Traceback" not in result.output
     assert "ANTHROPIC_API_KEY" in result.output
     assert "generation" in result.output.lower()
+
+
+def test_eval_rejects_a_mutate_spec_with_an_empty_description():
+    result = runner.invoke(app, ["eval", "/nonexistent/path/to/server.py", "--mutate", "tool_a:   "])
+    assert result.exit_code != 0
+    assert "empty new description" in result.output
+    assert "Could not connect to server" not in result.output
+
+
+def test_eval_reports_a_provider_api_error_cleanly(monkeypatch):
+    async def fake_fetch_catalog(params):
+        return ToolCatalog(tools=[Tool(name="tool_a", description="Does A.", inputSchema=_SIMPLE_SCHEMA)])
+
+    def fake_build_confusion_matrix(*args, **kwargs):
+        raise anthropic.BadRequestError(
+            "tools.0.name: String should match pattern",
+            response=httpx2.Response(400, request=httpx2.Request("POST", "https://api.anthropic.com")),
+            body=None,
+        )
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
+    monkeypatch.setattr(cli, "build_confusion_matrix", fake_build_confusion_matrix)
+
+    result = runner.invoke(app, ["eval", "somepath"])
+
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "Model provider error" in result.output
+    assert "String should match pattern" in result.output
 
 
 def test_eval_mutate_rejects_an_unknown_tool_name(monkeypatch):

@@ -35,8 +35,9 @@ def render_badge(matrix: ConfusionMatrix, mutation_result: MutationTrialResult |
         label_text = f"toolfit: {rate:.0%}"
     else:
         before_rate = sum(mutation_result.before_passes) / len(mutation_result.before_passes)
-        after_rate = sum(mutation_result.after_passes) / len(mutation_result.after_passes)
-        label_text = f"toolfit: {before_rate:.0%} → {after_rate:.0%}"
+        rate = sum(mutation_result.after_passes) / len(mutation_result.after_passes)
+        label_text = f"toolfit: {before_rate:.0%} → {rate:.0%}"
+    color = "#4c1" if rate >= 0.9 else "#dfb317" if rate >= 0.7 else "#e05d44"
 
     task_suite_hash = _task_suite_hash(matrix)
     label_text = html.escape(label_text, quote=True)
@@ -50,7 +51,7 @@ def render_badge(matrix: ConfusionMatrix, mutation_result: MutationTrialResult |
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="20" role="img" aria-label="{label_text}">\n'
         f"  <title>{label_text}</title>\n"
         f"  <desc>{metadata}</desc>\n"
-        f'  <rect width="{width}" height="20" fill="#4c1" rx="3"/>\n'
+        f'  <rect width="{width}" height="20" fill="{color}" rx="3"/>\n'
         f'  <text x="10" y="14" font-family="sans-serif" font-size="11" fill="#fff">{label_text}</text>\n'
         "</svg>"
     )

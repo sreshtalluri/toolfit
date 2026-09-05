@@ -2,7 +2,7 @@
 
 import pytest
 
-from toolfit.grade.significance import bonferroni_correct, paired_bootstrap_pvalue, wilson_interval
+from toolfit.grade.significance import bonferroni_correct, paired_exact_pvalue, wilson_interval
 
 
 def test_wilson_interval_is_centered_near_the_observed_rate_for_large_n():
@@ -43,42 +43,48 @@ def test_wilson_interval_rejects_an_unsupported_confidence_level():
         wilson_interval(5, 10, confidence=0.5)
 
 
-def test_paired_bootstrap_pvalue_is_zero_for_a_universal_improvement():
-    # Every pair goes from fail to pass — no resample can ever show a non-positive delta.
+def test_paired_exact_pvalue_for_a_universal_improvement_is_one_over_two_to_the_n():
+    # 5 fail->pass, 0 pass->fail: P(X >= 5 | k=5) = 1/32. Never exactly zero at small n.
     before = [False, False, False, False, False]
     after = [True, True, True, True, True]
-    assert paired_bootstrap_pvalue(before, after) == 0.0
+    assert paired_exact_pvalue(before, after) == pytest.approx(1 / 32)
 
 
-def test_paired_bootstrap_pvalue_is_one_for_no_change_at_all():
-    # Every pair is identical before/after — every resample's delta is exactly zero.
+def test_paired_exact_pvalue_is_one_for_no_change_at_all():
     before = [True, False, True, False]
     after = [True, False, True, False]
-    assert paired_bootstrap_pvalue(before, after) == 1.0
+    assert paired_exact_pvalue(before, after) == 1.0
 
 
-def test_paired_bootstrap_pvalue_is_one_when_things_got_worse():
+def test_paired_exact_pvalue_is_one_when_things_got_worse():
     before = [True, True, True]
     after = [False, False, False]
-    assert paired_bootstrap_pvalue(before, after) == 1.0
+    assert paired_exact_pvalue(before, after) == 1.0
 
 
-def test_paired_bootstrap_pvalue_is_reproducible_for_a_fixed_seed():
-    before = [False, True, False, True, False]
-    after = [True, True, False, True, True]
-    first = paired_bootstrap_pvalue(before, after, seed=42)
-    second = paired_bootstrap_pvalue(before, after, seed=42)
-    assert first == second
+def test_paired_exact_pvalue_ignores_ties_and_does_not_reach_significance_on_three_discordant_pairs():
+    # 3 fail->pass + 2 ties. A paired bootstrap over this reported ~0.010 (resampling the ties
+    # fabricates power); the exact test says 1/8 — correctly not significant at alpha=0.05.
+    before = [False, False, False, True, False]
+    after = [True, True, True, True, False]
+    assert paired_exact_pvalue(before, after) == pytest.approx(0.125)
 
 
-def test_paired_bootstrap_pvalue_rejects_mismatched_lengths():
+def test_paired_exact_pvalue_with_mixed_discordant_pairs():
+    # 3 improvements, 1 regression: P(X >= 3 | k=4) = (4 + 1) / 16.
+    before = [False, False, False, True]
+    after = [True, True, True, False]
+    assert paired_exact_pvalue(before, after) == pytest.approx(5 / 16)
+
+
+def test_paired_exact_pvalue_rejects_mismatched_lengths():
     with pytest.raises(ValueError, match="paired"):
-        paired_bootstrap_pvalue([True, False], [True])
+        paired_exact_pvalue([True, False], [True])
 
 
-def test_paired_bootstrap_pvalue_rejects_empty_input():
+def test_paired_exact_pvalue_rejects_empty_input():
     with pytest.raises(ValueError, match="zero trials"):
-        paired_bootstrap_pvalue([], [])
+        paired_exact_pvalue([], [])
 
 
 def test_bonferroni_correct_divides_alpha_by_test_count():

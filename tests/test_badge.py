@@ -42,6 +42,17 @@ def test_render_badge_shows_a_before_after_delta_with_a_mutation_result():
     )
     svg = render_badge(matrix, mutation_result)
     assert "toolfit: 0% → 100%" in svg
+    assert 'fill="#4c1"' in svg  # coloured by the after-rate
+
+
+def test_render_badge_colour_tracks_pass_rate():
+    matrix = _matrix_with_trials()  # 2/3 = 67% -> red
+    assert 'fill="#e05d44"' in render_badge(matrix)
+    for trial in matrix.trials_by_tool["tool_a"]:
+        trial.passed = True
+    for trial in matrix.trials_by_tool["tool_b"]:
+        trial.passed = True
+    assert 'fill="#4c1"' in render_badge(matrix)
 
 
 def test_render_badge_embeds_model_and_seed_metadata():

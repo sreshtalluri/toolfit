@@ -13,6 +13,7 @@ import asyncio
 import os
 
 import anthropic
+import openai
 import typer
 
 from toolfit.connect.client import fetch_catalog, server_params
@@ -101,6 +102,8 @@ def _parse_mutation(spec: str) -> tuple[str, str]:
     if ":" not in spec:
         raise ValueError(f"--mutate value {spec!r} must be of the form 'tool_name:new description'")
     tool_name, _, new_description = spec.partition(":")
+    if not new_description.strip():
+        raise ValueError(f"--mutate value {spec!r} has an empty new description")
     return tool_name.strip(), new_description.strip()
 
 
@@ -162,7 +165,14 @@ async def _run_eval(
         )
         raise typer.Exit(code=1)
     generator_client = anthropic.Anthropic()
-    matrix = build_confusion_matrix(catalog, adapter, generator_client, seeds=seeds)
+    try:
+        matrix = build_confusion_matrix(catalog, adapter, generator_client, seeds=seeds)
+    except (anthropic.APIError, openai.APIError) as e:
+        # Non-transient provider errors (400 invalid tool name, 401, exhausted retries) surface as a
+        # named CLI error, not a traceback. Nothing is printed for the partial run on purpose: a
+        # partial matrix looks complete.
+        typer.echo(f"Model provider error during eval: {e}", err=True)
+        raise typer.Exit(code=1)
     print(render_confusion_matrix(matrix))
 
     results: list[MutationTrialResult] = []
@@ -177,9 +187,13 @@ async def _run_eval(
                     err=True,
                 )
                 continue
-            results.append(
-                run_mutation_trials(matrix, catalog, adapter, tool_name=tool_name, new_description=new_description)
-            )
+            try:
+                results.append(
+                    run_mutation_trials(matrix, catalog, adapter, tool_name=tool_name, new_description=new_description)
+                )
+            except (anthropic.APIError, openai.APIError) as e:
+                typer.echo(f"Model provider error during --mutate {tool_name!r}: {e}", err=True)
+                raise typer.Exit(code=1)
 
         if results:
             significances = bonferroni_correct([r.p_value for r in results])

@@ -304,6 +304,19 @@ def test_with_retry_retries_on_a_rate_limit_error_then_succeeds():
     assert len(sleeps) == 2
 
 
+def test_with_retry_retries_on_an_anthropic_internal_server_error_then_succeeds():
+    attempts = {"count": 0}
+
+    def fn():
+        attempts["count"] += 1
+        if attempts["count"] < 2:
+            raise _fake_rate_limit_error(anthropic.InternalServerError)
+        return "ok"
+
+    assert _with_retry(fn, max_retries=3, base_delay=0.01, sleep_fn=lambda delay: None) == "ok"
+    assert attempts["count"] == 2
+
+
 def test_with_retry_retries_on_an_openai_rate_limit_error_then_succeeds():
     attempts = {"count": 0}
     sleeps = []

@@ -123,8 +123,10 @@ def check_no_leakage(task: GeneratedTask, *, catalog_tool_names: list[str]) -> b
     literal name. Returns True if clean. Checked against ALL catalog tool names, not just the
     target — a task that accidentally names a *different* tool is just as invalid.
     """
+    # Whole-word match: a tool literally named `search` or `list` must not flag every task that
+    # uses that English word.
     lowered = task.text.lower()
-    return not any(name.lower() in lowered for name in catalog_tool_names)
+    return not any(re.search(rf"\b{re.escape(name.lower())}\b", lowered) for name in catalog_tool_names)
 
 
 @dataclass

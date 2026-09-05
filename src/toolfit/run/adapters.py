@@ -43,7 +43,12 @@ def _with_retry(
     for attempt in range(max_retries + 1):
         try:
             return fn()
-        except (anthropic.RateLimitError, openai.RateLimitError):
+        except (
+            anthropic.RateLimitError,
+            openai.RateLimitError,
+            anthropic.InternalServerError,  # includes 529 "overloaded", Anthropic's most common transient
+            openai.InternalServerError,
+        ):
             if attempt == max_retries:
                 raise
             delay = base_delay * (2**attempt) + random.uniform(0, base_delay)

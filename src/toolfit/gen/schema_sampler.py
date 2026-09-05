@@ -48,9 +48,19 @@ def sample_arguments(schema: dict, *, seed: int) -> dict[str, Any]:
     rng = random.Random(seed)
     if schema.get("type") != "object":
         raise ValueError(f"sample_arguments: expected object schema, got {schema.get('type')!r}")
+    return _sample_object(schema, rng)
+
+
+def _sample_object(schema: dict, rng: random.Random) -> dict[str, Any]:
+    # Required properties always; each optional one with 50% probability. Sampling every optional
+    # (as this used to) turns a 10-filter search tool into a 10-argument task that the grader's
+    # exact-match rule then fails on any omission, misattributing model behaviour to description
+    # quality. Draw the coin before the value so the seed still fully determines the sample.
+    required = set(schema.get("required", []))
     result: dict[str, Any] = {}
     for prop_name, prop_schema in schema.get("properties", {}).items():
-        result[prop_name] = _sample_value(prop_name, prop_schema, rng)
+        if prop_name in required or rng.random() < 0.5:
+            result[prop_name] = _sample_value(prop_name, prop_schema, rng)
     return result
 
 
@@ -67,9 +77,15 @@ def _sample_value(prop_name: str, prop_schema: dict, rng: random.Random) -> Any:
         return _sample_value(prop_name, rng.choice(branches), rng)
 
     prop_type = prop_schema.get("type")
+    if isinstance(prop_type, list):
+        # `"type": ["string", "null"]` is the hand-written-schema spelling of nullable.
+        return _sample_value(prop_name, {**prop_schema, "type": rng.choice(prop_type)}, rng)
 
     if prop_type == "null":
         return None
+
+    if prop_type == "object":
+        return _sample_object(prop_schema, rng)
 
     if prop_type == "string":
         fmt = prop_schema.get("format")

@@ -12,9 +12,16 @@ from toolfit.gen.taskgen import (
     GeneratedTask,
     _has_identifier_argument,
     _parse_solvability_response,
+    check_no_leakage,
     check_solvability,
     generate_task,
 )
+
+
+def test_check_no_leakage_matches_whole_words_only():
+    task = GeneratedTask(text="Search for open issues and list them", tool_name="find", arguments={})
+    assert check_no_leakage(task, catalog_tool_names=["search_issues", "list_issues"])
+    assert not check_no_leakage(task, catalog_tool_names=["search"])
 
 
 def test_parses_a_solvable_response():
