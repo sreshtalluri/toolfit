@@ -30,7 +30,11 @@ app = typer.Typer()
 
 @app.command()
 def eval(
-    server_path: str = typer.Argument(..., help="Path to a local stdio MCP server script."),
+    server_path: str = typer.Argument(
+        ...,
+        help="MCP server: a .py script (run via `uv run`), an http(s):// URL, "
+        "or a command line like 'npx -y @modelcontextprotocol/server-github'.",
+    ),
     seeds: int = typer.Option(5, min=1, help="Tasks generated per tool."),
     model: str = typer.Option("claude-sonnet-5", help="Model under test."),
     mutate: list[str] = typer.Option(
@@ -73,12 +77,25 @@ def eval(
 
 @app.command()
 def scan(
-    server_path: str = typer.Argument(..., help="Path to a local stdio MCP server script."),
+    server_path: str = typer.Argument(
+        ...,
+        help="MCP server: a .py script (run via `uv run`), an http(s):// URL, "
+        "or a command line like 'npx -y @modelcontextprotocol/server-github'.",
+    ),
     strict: bool = typer.Option(False, "--strict", help="Exit with code 1 if any lint finding exists."),
 ) -> None:
     """Run free, static lint checks against the given MCP server's tool catalog. Makes no model
     calls and needs no API key."""
     asyncio.run(_run_scan(server_path, strict=strict))
+
+
+def _root_causes(e: BaseException) -> str:
+    # The mcp SDK raises anyio ExceptionGroups whose str() is just "unhandled errors in a
+    # TaskGroup"; the useful message (missing binary, refused connection) is in the leaves.
+    subs = getattr(e, "exceptions", None)
+    if subs:
+        return "; ".join(_root_causes(s) for s in subs)
+    return f"{type(e).__name__}: {e}"
 
 
 async def _run_scan(server_path: str, *, strict: bool) -> None:
@@ -87,7 +104,7 @@ async def _run_scan(server_path: str, *, strict: bool) -> None:
         catalog = await fetch_catalog(params)
     except Exception as e:
         # Same Failure Modes handling as _run_eval (design doc, docs/designs/toolfit-v0-scope.md:102-104).
-        typer.echo(f"Could not connect to server at {server_path!r}: {e}", err=True)
+        typer.echo(f"Could not connect to server at {server_path!r}: {_root_causes(e)}", err=True)
         raise typer.Exit(code=1)
 
     findings = run_lint(catalog)
@@ -134,7 +151,7 @@ async def _run_eval(
         # Failure Modes (design doc, docs/designs/toolfit-v0-scope.md:102-104): an unreachable
         # server or an auth-required catalog fetch must report the failure explicitly rather than
         # surfacing a raw traceback or failing silently.
-        typer.echo(f"Could not connect to server at {server_path!r}: {e}", err=True)
+        typer.echo(f"Could not connect to server at {server_path!r}: {_root_causes(e)}", err=True)
         raise typer.Exit(code=1)
 
     for tool_name, _ in parsed_mutations:

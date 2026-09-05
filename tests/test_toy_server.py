@@ -4,8 +4,31 @@ plan's schema-sampler hardening (Task 1) is built to actually exercise, not just
 against synthetic dicts."""
 
 import pytest
+from mcp import StdioServerParameters
 
 from toolfit.connect.client import fetch_catalog, server_params
+
+
+def test_server_params_runs_py_scripts_via_uv():
+    params = server_params("examples/toy_server.py")
+    assert isinstance(params, StdioServerParameters)
+    assert (params.command, params.args) == ("uv", ["run", "examples/toy_server.py"])
+
+
+def test_server_params_passes_http_urls_through():
+    assert server_params("https://mcp.example.com/mcp") == "https://mcp.example.com/mcp"
+
+
+def test_server_params_shell_splits_a_command_line():
+    params = server_params("npx -y @modelcontextprotocol/server-github")
+    assert isinstance(params, StdioServerParameters)
+    assert (params.command, params.args) == ("npx", ["-y", "@modelcontextprotocol/server-github"])
+
+
+@pytest.mark.asyncio
+async def test_fetch_catalog_works_with_an_explicit_command_line():
+    catalog = await fetch_catalog(server_params("uv run examples/toy_server.py"))
+    assert "create_task" in catalog.names()
 
 
 @pytest.mark.asyncio
