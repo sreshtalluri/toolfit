@@ -10,7 +10,7 @@ import anthropic
 from toolfit.connect.client import ToolCatalog
 from toolfit.grade.confusion import ConfusionMatrix
 from toolfit.grade.mutator import MutationTrialResult, run_mutation_trials
-from toolfit.run.adapters import ModelAdapter
+from toolfit.run.adapters import ModelAdapter, _with_retry
 
 FIXER_MODEL = "claude-sonnet-5"
 
@@ -69,10 +69,12 @@ def propose_fix(
         parameters=_describe_parameters(input_schema),
         other_tools="\n".join(f"- {n}: {other_descriptions.get(n, '(no description)')}" for n in other_tool_names),
     )
-    response = client.messages.create(
-        model=FIXER_MODEL,
-        max_tokens=1000,
-        messages=[{"role": "user", "content": prompt}],
+    response = _with_retry(
+        lambda: client.messages.create(
+            model=FIXER_MODEL,
+            max_tokens=1000,
+            messages=[{"role": "user", "content": prompt}],
+        )
     )
     # Sonnet 5 runs adaptive thinking by default (no `thinking` param needed to trigger it),
     # so response.content[0] is not guaranteed to be the text block — found and fixed as a

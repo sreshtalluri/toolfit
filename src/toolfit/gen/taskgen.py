@@ -14,6 +14,8 @@ from dataclasses import dataclass
 
 import anthropic
 
+from toolfit.run.adapters import _with_retry
+
 GENERATOR_MODEL = "claude-sonnet-5"
 
 _PROMPT_TEMPLATE = """A user wants to trigger this action:
@@ -103,10 +105,12 @@ def generate_task(
     prompt = _PROMPT_TEMPLATE.format(description_line=description_line, arguments=arguments)
     if _has_identifier_argument(arguments, tool_name=tool_name):
         prompt += _IDENTIFIER_GUIDANCE
-    response = client.messages.create(
-        model=GENERATOR_MODEL,
-        max_tokens=1000,
-        messages=[{"role": "user", "content": prompt}],
+    response = _with_retry(
+        lambda: client.messages.create(
+            model=GENERATOR_MODEL,
+            max_tokens=1000,
+            messages=[{"role": "user", "content": prompt}],
+        )
     )
     text = next((block.text for block in response.content if block.type == "text"), None)
     if text is None:
@@ -162,10 +166,12 @@ def check_solvability(
     """
     tool_list = "\n".join(f"- {name}: {desc}" for name, desc in catalog_descriptions.items())
     prompt = _SOLVABILITY_PROMPT_TEMPLATE.format(task_text=task.text, tool_list=tool_list)
-    response = client.messages.create(
-        model=GENERATOR_MODEL,
-        max_tokens=1000,
-        messages=[{"role": "user", "content": prompt}],
+    response = _with_retry(
+        lambda: client.messages.create(
+            model=GENERATOR_MODEL,
+            max_tokens=1000,
+            messages=[{"role": "user", "content": prompt}],
+        )
     )
     if response.stop_reason == "max_tokens":
         print("WARNING: solvability check response truncated at max_tokens", file=sys.stderr)

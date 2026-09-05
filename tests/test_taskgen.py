@@ -6,6 +6,7 @@ run/)."""
 
 from types import SimpleNamespace
 
+import anthropic
 import pytest
 
 from toolfit.gen.taskgen import (
@@ -98,6 +99,26 @@ def test_creation_verb_skip_handles_camel_case_and_upper_case_tool_names():
     assert not _has_identifier_argument(args, tool_name="createReminder")
     assert not _has_identifier_argument(args, tool_name="CREATE_REMINDER")
     assert not _has_identifier_argument(args, tool_name="schedule-reminder")
+
+
+def test_generate_task_retries_the_generator_call_on_a_rate_limit(monkeypatch):
+    import httpx2
+
+    monkeypatch.setattr("toolfit.run.adapters.time.sleep", lambda s: None)
+    attempts = {"n": 0}
+    ok = SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text="Do the thing.")])
+
+    def create(**kwargs):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            resp = httpx2.Response(429, request=httpx2.Request("POST", "https://api.anthropic.com"))
+            raise anthropic.RateLimitError("rate limited", response=resp, body=None)
+        return ok
+
+    client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    task = generate_task(client, tool_name="update_task", tool_description="Modify.", arguments={})
+    assert task.text == "Do the thing."
+    assert attempts["n"] == 2
 
 
 def _client_returning_no_text_block():

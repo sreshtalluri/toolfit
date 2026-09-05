@@ -29,7 +29,7 @@ T = TypeVar("T")
 def _with_retry(
     fn: Callable[[], T],
     *,
-    max_retries: int = 3,
+    max_retries: int = 5,
     base_delay: float = 1.0,
     sleep_fn: Callable[[float], None] | None = None,
 ) -> T:
