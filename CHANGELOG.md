@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1 (2026-09-05)
+
+- `AGENTS.md`: operating manual for agents installing/running toolfit on a user's behalf, verified against the published wheel in a fresh venv.
+- `examples/crm_server.py`: production-shaped example (formats, enums, nested object, bounds) with four planted description problems; reference eval output under `docs/examples/crm-server/`.
+- `eval` checks API keys before launching the server.
+- Bundled examples carry PEP 723 inline metadata so `uv run` works from any directory.
+
 ## 0.1.0 (2026-09-05)
 
 First release.

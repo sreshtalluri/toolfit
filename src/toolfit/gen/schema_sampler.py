@@ -3,10 +3,10 @@
 M1 scope: the common JSON Schema subset real MCP servers actually use — string/integer/number/
 boolean/array-of-primitives, enum, format (date/date-time/email/uuid), nullable fields (expressed as
 `anyOf: [<type>, {"type": "null"}]`, the real shape the `mcp` SDK generates for `X | None` type
-hints — verified empirically, not assumed), and simple oneOf/anyOf (pick one branch). $ref
-resolution, allOf merging, regex-pattern generation, and dependent constraints are real JSON
-Schema features but rarer in practice — raising loudly on them (never silently sampling wrong)
-is deferred to M2+, not built here (design doc M1 Design).
+hints — verified empirically, not assumed), simple oneOf/anyOf (pick one branch), nested objects,
+list-typed nullables, numeric bounds, and local `$ref`/`allOf` (what pydantic emits for nested
+models — the CRM example's `address: Address | None`). Regex-pattern generation and dependent
+constraints are still unsupported and raise loudly (never silently sampling wrong).
 """
 
 from __future__ import annotations
@@ -34,7 +34,30 @@ _FORMAT_GENERATORS: dict[str, Callable[[random.Random], str]] = {
     "uuid": lambda rng: str(uuid.UUID(int=rng.getrandbits(128))),
 }
 
-_UNSUPPORTED_KEYS = ("$ref", "allOf", "pattern")
+_UNSUPPORTED_KEYS = ("pattern",)
+
+
+def _resolve(prop_schema: dict, root: dict) -> dict:
+    """Inline local `$ref`s and merge `allOf` — the shapes pydantic emits for nested models
+    (`{"$ref": "#/$defs/Address"}`, sometimes wrapped in `allOf` to carry a description)."""
+    schema = dict(prop_schema)
+    ref = schema.pop("$ref", None)
+    if ref is not None:
+        if not ref.startswith("#/"):
+            raise ValueError(f"sample_arguments: only local $ref is supported, got {ref!r}")
+        target: Any = root
+        try:
+            for part in ref[2:].split("/"):
+                target = target[part]
+        except (KeyError, TypeError, IndexError):
+            raise ValueError(f"sample_arguments: unresolvable $ref {ref!r}") from None
+        schema = {**_resolve(target, root), **schema}
+    if "allOf" in schema:
+        merged: dict = {}
+        for sub in schema.pop("allOf"):
+            merged.update(_resolve(sub, root))
+        schema = {**merged, **schema}
+    return schema
 
 
 def sample_arguments(schema: dict, *, seed: int) -> dict[str, Any]:
@@ -48,10 +71,10 @@ def sample_arguments(schema: dict, *, seed: int) -> dict[str, Any]:
     rng = random.Random(seed)
     if schema.get("type") != "object":
         raise ValueError(f"sample_arguments: expected object schema, got {schema.get('type')!r}")
-    return _sample_object(schema, rng)
+    return _sample_object(schema, rng, root=schema)
 
 
-def _sample_object(schema: dict, rng: random.Random) -> dict[str, Any]:
+def _sample_object(schema: dict, rng: random.Random, *, root: dict) -> dict[str, Any]:
     # Required properties always; each optional one with 50% probability. Sampling every optional
     # (as this used to) turns a 10-filter search tool into a 10-argument task that the grader's
     # exact-match rule then fails on any omission, misattributing model behaviour to description
@@ -60,11 +83,12 @@ def _sample_object(schema: dict, rng: random.Random) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for prop_name, prop_schema in schema.get("properties", {}).items():
         if prop_name in required or rng.random() < 0.5:
-            result[prop_name] = _sample_value(prop_name, prop_schema, rng)
+            result[prop_name] = _sample_value(prop_name, prop_schema, rng, root=root)
     return result
 
 
-def _sample_value(prop_name: str, prop_schema: dict, rng: random.Random) -> Any:
+def _sample_value(prop_name: str, prop_schema: dict, rng: random.Random, *, root: dict) -> Any:
+    prop_schema = _resolve(prop_schema, root)
     for key in _UNSUPPORTED_KEYS:
         if key in prop_schema:
             raise ValueError(f"sample_arguments: {key!r} not supported for property {prop_name!r} (M2+)")
@@ -74,18 +98,18 @@ def _sample_value(prop_name: str, prop_schema: dict, rng: random.Random) -> Any:
 
     branches = prop_schema.get("oneOf") or prop_schema.get("anyOf")
     if branches:
-        return _sample_value(prop_name, rng.choice(branches), rng)
+        return _sample_value(prop_name, rng.choice(branches), rng, root=root)
 
     prop_type = prop_schema.get("type")
     if isinstance(prop_type, list):
         # `"type": ["string", "null"]` is the hand-written-schema spelling of nullable.
-        return _sample_value(prop_name, {**prop_schema, "type": rng.choice(prop_type)}, rng)
+        return _sample_value(prop_name, {**prop_schema, "type": rng.choice(prop_type)}, rng, root=root)
 
     if prop_type == "null":
         return None
 
     if prop_type == "object":
-        return _sample_object(prop_schema, rng)
+        return _sample_object(prop_schema, rng, root=root)
 
     if prop_type == "string":
         fmt = prop_schema.get("format")
@@ -125,7 +149,7 @@ def _sample_value(prop_name: str, prop_schema: dict, rng: random.Random) -> Any:
         if items_schema is None:
             raise ValueError(f"sample_arguments: array property {prop_name!r} has no 'items' schema")
         count = rng.randint(1, 3)
-        return [_sample_value(prop_name, items_schema, rng) for _ in range(count)]
+        return [_sample_value(prop_name, items_schema, rng, root=root) for _ in range(count)]
 
     raise ValueError(f"sample_arguments: unsupported property type for {prop_name!r}: {prop_type!r}")
 
