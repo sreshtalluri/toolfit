@@ -125,7 +125,8 @@ toolfit scan "npx -y @modelcontextprotocol/server-filesystem ."   # any command 
 toolfit scan https://your-host/mcp                              # Streamable HTTP
 ```
 
-The subprocess inherits your environment, so servers that read a token from `GITHUB_TOKEN` or
+The subprocess gets your environment (minus toolfit's own `*_API_KEY`s, which a third-party server
+binary has no business seeing), so servers that read a token from `GITHUB_TOKEN` or
 `STRIPE_SECRET_KEY` work unchanged. toolfit never calls a tool — it only ever asks for the
 catalog (`tools/list`), then asks a model what it *would* call. Nothing touches your backend.
 

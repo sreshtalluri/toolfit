@@ -117,9 +117,8 @@ def _root_causes(e: BaseException) -> str:
 
 
 async def _run_scan(server_path: str, *, strict: bool) -> None:
-    params = server_params(server_path)
     try:
-        catalog = await fetch_catalog(params)
+        catalog = await fetch_catalog(server_params(server_path))
     except Exception as e:
         # Same Failure Modes handling as _run_eval (design doc, docs/designs/toolfit-v0-scope.md:102-104).
         typer.echo(f"Could not connect to server at {server_path!r}: {_root_causes(e)}", err=True)
@@ -201,15 +200,22 @@ async def _run_eval(
             err=True,
         )
 
-    params = server_params(server_path)
     try:
-        catalog = await fetch_catalog(params)
+        catalog = await fetch_catalog(server_params(server_path))
     except Exception as e:
         # Failure Modes (design doc, docs/designs/toolfit-v0-scope.md:102-104): an unreachable
         # server or an auth-required catalog fetch must report the failure explicitly rather than
         # surfacing a raw traceback or failing silently.
         typer.echo(f"Could not connect to server at {server_path!r}: {_root_causes(e)}", err=True)
         raise typer.Exit(code=1)
+
+    for tool_name in sorted(fix_tool):
+        if tool_name not in catalog.names():
+            typer.echo(
+                f"--fix-tool references unknown tool {tool_name!r} (catalog has: {', '.join(catalog.names())})",
+                err=True,
+            )
+            raise typer.Exit(code=1)
 
     for tool_name, _ in parsed_mutations:
         if tool_name not in catalog.names():
@@ -276,6 +282,9 @@ async def _run_eval(
         except (anthropic.APIError, openai.APIError) as e:
             typer.echo(f"Model provider error during --fix: {e}", err=True)
             raise typer.Exit(code=1)
+        for tool_name in sorted(fix_tool - {v.proposal.tool_name for v in verdicts}):
+            why = "no failed trial" if tool_name in matrix.trials_by_tool else "excluded by a schema warning"
+            typer.echo(f"--fix-tool {tool_name}: nothing to fix ({why})", err=True)
 
     # One Bonferroni correction across everything re-measured in this run — hand-supplied
     # mutations and proposed fixes alike — so neither can cherry-pick a lenient threshold.

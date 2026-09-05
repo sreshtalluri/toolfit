@@ -35,7 +35,12 @@ def _describe_parameters(input_schema: dict | None) -> str:
     required = set(input_schema.get("required", []))
     parts = []
     for name, prop in input_schema["properties"].items():
-        kind = prop.get("type") or ("one of " + "/".join(str(b.get("type")) for b in prop.get("anyOf", [])))
+        kind = prop.get("type")
+        if isinstance(kind, list):
+            kind = "/".join(map(str, kind))
+        elif not kind:
+            branches = prop.get("anyOf") or prop.get("oneOf") or []
+            kind = "one of " + "/".join(str(b.get("type", "?")) for b in branches) if branches else "any"
         detail = f", values: {', '.join(map(str, prop['enum']))}" if "enum" in prop else ""
         parts.append(f"{name} ({kind}{', required' if name in required else ', optional'}{detail})")
     return "; ".join(parts)
@@ -123,7 +128,7 @@ class FixVerdict:
         if after < before:
             return "rejected: made things worse"
         if after == before:
-            return "rejected: no change"
+            return "rejected: no net change"
         alpha = f" (p={self.trial.p_value:.3f} vs corrected α={self.trial.corrected_alpha:.4f})" if self.trial.corrected_alpha else ""
         return f"rejected: improvement not significant after correction{alpha}"
 

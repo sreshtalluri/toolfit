@@ -48,12 +48,12 @@ def _with_retry(
             openai.RateLimitError,
             anthropic.InternalServerError,  # includes 529 "overloaded", Anthropic's most common transient
             openai.InternalServerError,
-        ):
+        ) as e:
             if attempt == max_retries:
                 raise
             delay = base_delay * (2**attempt) + random.uniform(0, base_delay)
             print(
-                f"WARNING: rate limited, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})",
+                f"WARNING: {type(e).__name__}, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries})",
                 file=sys.stderr,
             )
             (sleep_fn or time.sleep)(delay)

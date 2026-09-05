@@ -105,13 +105,17 @@ def _sample_value(prop_name: str, prop_schema: dict, rng: random.Random) -> Any:
         # `{"type": "string"}` property with no further constraints.
         return f"sample-{prop_name}-{rng.randint(1, 999)}"
 
-    if prop_type == "integer":
-        return rng.randint(1, 100)
-
-    if prop_type == "number":
+    if prop_type in ("integer", "number"):
         # An integer is a valid `number`, and zod-generated MCP schemas type counts (`head`,
         # `tail`, `max_count`) as `number`; "read the first 76.22 lines" is not a task anyone sends.
-        return rng.randint(1, 100)
+        # Honour declared bounds so a [0, 1] `temperature` doesn't get 73.
+        lo = prop_schema.get("minimum", prop_schema.get("exclusiveMinimum", 0) + 1 if "exclusiveMinimum" in prop_schema else 1)
+        hi = prop_schema.get("maximum", prop_schema.get("exclusiveMaximum", 101) - 1 if "exclusiveMaximum" in prop_schema else 100)
+        if hi < lo:
+            raise ValueError(f"sample_arguments: empty range for property {prop_name!r}: [{lo}, {hi}]")
+        if isinstance(lo, float) or isinstance(hi, float):
+            return round(rng.uniform(lo, hi), 2)
+        return rng.randint(lo, hi)
 
     if prop_type == "boolean":
         return rng.choice([True, False])

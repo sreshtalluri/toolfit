@@ -5,11 +5,13 @@ all three into one findings list for the `scan` CLI command to render.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from toolfit.connect.client import ToolCatalog
 
 _SHORT_DESCRIPTION_THRESHOLD = 15
+_SELF_DEPRECATED = re.compile(r"^\W*deprecated\b|\bdeprecated\s*[:\-—(]|\b(is|are|now|been)\s+deprecated\b", re.I)
 
 
 @dataclass
@@ -80,7 +82,9 @@ def _deprecated_description(catalog: ToolCatalog) -> list[LintFinding]:
     # catalog costs context tokens and shows up as confusion in every eval; drop it or hide it.
     findings = []
     for tool in catalog.tools:
-        if "deprecated" in (tool.description or "").casefold():
+        # Only when the tool says it about itself — "DEPRECATED: …", "is deprecated", or leading —
+        # not when deprecation is its subject ("List deprecated packages").
+        if _SELF_DEPRECATED.search(tool.description or ""):
             findings.append(
                 LintFinding(
                     rule_id="deprecated_tool",

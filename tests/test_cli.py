@@ -129,6 +129,16 @@ def test_eval_reports_a_provider_api_error_cleanly(monkeypatch):
     assert "String should match pattern" in result.output
 
 
+def test_eval_fix_tool_rejects_an_unknown_tool_name(monkeypatch):
+    async def fake_fetch_catalog(params):
+        return ToolCatalog(tools=[Tool(name="tool_a", description="Does A.", inputSchema=_SIMPLE_SCHEMA)])
+
+    monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
+    result = runner.invoke(app, ["eval", "somepath", "--fix-tool", "typo_name"])
+    assert result.exit_code == 1
+    assert "--fix-tool references unknown tool 'typo_name'" in result.output
+
+
 def test_eval_mutate_rejects_an_unknown_tool_name(monkeypatch):
     async def fake_fetch_catalog(params):
         return ToolCatalog(tools=[Tool(name="tool_a", description="Does A.", inputSchema=_SIMPLE_SCHEMA)])

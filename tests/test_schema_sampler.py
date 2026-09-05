@@ -205,6 +205,23 @@ def test_sample_arguments_handles_list_typed_nullable():
     assert any(isinstance(r, str) for r in results)
 
 
+def test_sample_arguments_honours_numeric_bounds():
+    schema = {
+        "type": "object",
+        "properties": {
+            "temperature": {"type": "number", "minimum": 0, "maximum": 1},
+            "page": {"type": "integer", "minimum": 1, "maximum": 3},
+            "ratio": {"type": "number", "minimum": 0.5, "maximum": 0.75},
+        },
+        "required": ["temperature", "page", "ratio"],
+    }
+    for seed in range(1, 30):
+        r = sample_arguments(schema, seed=seed)
+        assert 0 <= r["temperature"] <= 1
+        assert r["page"] in (1, 2, 3)
+        assert 0.5 <= r["ratio"] <= 0.75
+
+
 def test_sample_arguments_recurses_into_nested_objects():
     schema = {
         "type": "object",

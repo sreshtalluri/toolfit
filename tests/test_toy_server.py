@@ -19,6 +19,28 @@ def test_server_params_passes_http_urls_through():
     assert server_params("https://mcp.example.com/mcp") == "https://mcp.example.com/mcp"
 
 
+def test_server_params_passes_the_environment_minus_toolfit_keys(monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_x")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+    env = server_params("npx -y some-server").env
+    assert env["GITHUB_TOKEN"] == "ghp_x"  # the SDK default is a six-variable whitelist that drops this
+    assert "ANTHROPIC_API_KEY" not in env
+    assert "PATH" in env
+
+
+def test_server_params_keeps_a_py_path_with_spaces_intact(tmp_path):
+    script = tmp_path / "my servers" / "server.py"
+    script.parent.mkdir()
+    script.write_text("")
+    params = server_params(str(script))
+    assert (params.command, params.args) == ("uv", ["run", str(script)])
+
+
+def test_server_params_rejects_an_empty_server():
+    with pytest.raises(ValueError, match="empty"):
+        server_params("   ")
+
+
 def test_server_params_shell_splits_a_command_line():
     params = server_params("npx -y @modelcontextprotocol/server-github")
     assert isinstance(params, StdioServerParameters)

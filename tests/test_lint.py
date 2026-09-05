@@ -129,6 +129,19 @@ def test_run_lint_flags_a_tool_that_calls_itself_deprecated():
     assert [f.tool_name for f in findings] == ["read_file"]
 
 
+def test_run_lint_does_not_flag_tools_whose_subject_is_deprecation():
+    catalog = ToolCatalog(
+        tools=[
+            Tool(name="list_deprecated", description="List deprecated packages in the registry.", inputSchema={}),
+            Tool(name="mark", description="Mark a package version as deprecated.", inputSchema={}),
+            Tool(name="old", description="This tool is deprecated; use new_tool.", inputSchema={}),
+            Tool(name="older", description="Deprecated. Prefer newer_tool.", inputSchema={}),
+        ]
+    )
+    findings = [f.tool_name for f in run_lint(catalog) if f.rule_id == "deprecated_tool"]
+    assert findings == ["old", "older"]
+
+
 def test_run_lint_returns_no_findings_for_a_clean_catalog():
     catalog = _catalog(
         Tool(name="create_task", description="Add a new task to the user's list.", input_schema=_EMPTY_SCHEMA),

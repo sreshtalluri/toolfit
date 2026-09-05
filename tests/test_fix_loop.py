@@ -122,7 +122,7 @@ def test_verdict_accepted_only_when_significant_and_better():
     assert not _verdict([False, False], [True, True], significant=False).accepted
     assert "not significant" in _verdict([False, False], [True, True], significant=False).reason
     assert "worse" in _verdict([True, True], [False, True], significant=False).reason
-    assert "no change" in _verdict([True, False], [True, False], significant=False).reason
+    assert "no net change" in _verdict([True, False], [True, False], significant=False).reason
     assert "before re-measurement" in _verdict([], [], significant=False, rejected=True).reason
 
 

@@ -45,6 +45,8 @@ def test_describe_parameters_lists_type_requiredness_and_enum_values():
         "notes (one of string/null, optional)"
     )
     assert _describe_parameters(None) == "(none)"
+    assert _describe_parameters({"properties": {"x": {"type": ["string", "null"]}}}) == "x (string/null, optional)"
+    assert _describe_parameters({"properties": {"y": {"oneOf": [{"type": "integer"}]}}}) == "y (one of integer, optional)"
 
 
 def test_validate_accepts_a_real_rewrite():
