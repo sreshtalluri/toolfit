@@ -1,0 +1,40 @@
+{
+  "model": "claude-sonnet-5",
+  "generator_model": "claude-sonnet-5",
+  "seeds": 10,
+  "fixes": [
+    {
+      "tool": "create_task",
+      "before_description": "Add a new task.",
+      "after_description": "Creates a brand-new task by specifying its title and priority, distinct from update_task (which modifies existing tasks) or create_reminder (which schedules reminders for tasks that already exist).",
+      "before_passed": 9,
+      "after_passed": 7,
+      "n": 10,
+      "p_value": 1.0,
+      "accepted": false,
+      "reason": "rejected: made things worse"
+    },
+    {
+      "tool": "count_tasks",
+      "before_description": "Get tasks by status.",
+      "after_description": "Return the number of tasks matching a given status, rather than the tasks themselves, by accepting a required status argument.",
+      "before_passed": 0,
+      "after_passed": 0,
+      "n": 10,
+      "p_value": 1.0,
+      "accepted": false,
+      "reason": "rejected: no change"
+    },
+    {
+      "tool": "create_reminder",
+      "before_description": "Schedule a reminder for an existing task.",
+      "after_description": "Schedule a reminder (with a required remind_at time, notify_channels list, snooze_minutes, and priority of low/medium/high, plus optional notes) for an already-existing task identified by task_id, rather than creating, updating, listing, or counting tasks themselves.",
+      "before_passed": 8,
+      "after_passed": 8,
+      "n": 10,
+      "p_value": 1.0,
+      "accepted": false,
+      "reason": "rejected: no change"
+    }
+  ]
+}
