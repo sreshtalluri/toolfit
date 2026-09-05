@@ -27,6 +27,26 @@ def test_validate_rejects_too_short_rewrite():
     assert result.rejection_reason == "too short to be a real description"
 
 
+def test_describe_parameters_lists_type_requiredness_and_enum_values():
+    from toolfit.fix.fixer import _describe_parameters
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "task_id": {"type": "string"},
+            "priority": {"type": "string", "enum": ["low", "high"]},
+            "notes": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        },
+        "required": ["task_id", "priority"],
+    }
+    out = _describe_parameters(schema)
+    assert out == (
+        "task_id (string, required); priority (string, required, values: low, high); "
+        "notes (one of string/null, optional)"
+    )
+    assert _describe_parameters(None) == "(none)"
+
+
 def test_validate_accepts_a_real_rewrite():
     result = _validate("update_task", "Add a new task.", "Modify an existing task's title given its task_id.")
     assert not result.rejected

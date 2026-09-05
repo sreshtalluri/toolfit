@@ -82,7 +82,9 @@ def test_run_fix_loop_lists_confused_with_tools_first_in_the_rewrite_prompt():
     client = SimpleNamespace(messages=SimpleNamespace(create=create))
     run_fix_loop(_matrix(), _catalog(), _AlwaysRightAdapter(), client)
 
-    assert "create_task, list_tasks" in seen["prompt"]
+    prompt = seen["prompt"]
+    assert prompt.index("- create_task: Add a new task.") < prompt.index("- list_tasks: List tasks by status.")
+    assert "Parameters: title (string, optional)" in prompt
 
 
 def test_run_fix_loop_records_a_rejected_proposal_without_spending_any_adapter_calls():

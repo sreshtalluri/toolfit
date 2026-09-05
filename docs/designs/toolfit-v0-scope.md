@@ -276,3 +276,12 @@ Detection layer: `check_solvability` and `check_no_leakage` graduate from the sp
 **Sampler now honours `required`** — optional properties are sampled with probability 0.5 per seed (seed still fully determines the draw). Previously every optional was always populated, so a 10-filter search tool produced a 10-argument task and the exact-match grader attributed any omission to description quality.
 
 **Deferred, deliberately:** `--strict` still exits 0 when tools were excluded by schema warnings (policy owned by M3b Action design, see above); truncation/malformed-JSON no-calls are still tallied with genuine no-calls rather than in a separate `(error)` column — worth a column once the corpus run shows how frequent they are.
+
+## M3b + M4 shipped (2026-09-05)
+
+- **Generic server launch** (`connect/client.py`): `.py` → `uv run`, `http(s)://` → Streamable HTTP, anything else shell-split as a command line; subprocess inherits the environment. Unblocked the corpus.
+- **Corpus** (`docs/corpus.md`): 20 public servers, 15 reachable without credentials, 1 static finding across 166 tools — `scan` catches the copy-paste class only; the README says so.
+- **M4 fix loop** (`eval --fix`, `fix/fixer.py::run_fix_loop`): per failing tool, propose → re-run that tool's own base tasks with only that description patched → exact McNemar, one Bonferroni across --mutate and --fix together → ACCEPTED only if significant and better. Rejected proposals reported alongside. `toolfit-fixes.json` carries description text only (Premise 1). An accepted fix feeds the badge delta.
+- **GitHub Action** (`action.yml`): `scan --strict` always; `eval --strict --badge` with `eval: true` + key; report and badge uploaded as artifacts. Repo CI (`.github/workflows/ci.yml`): pytest 3.10/3.13, `uv build`, keyless scan.
+- **`--strict` on schema-excluded tools stays warn-only.** Decided here rather than deferred again: a green gate that names what it skipped on stderr is better than a red gate on a server the harness could not evaluate — the latter would push people to drop `--strict` entirely.
+- **Not done:** PyPI upload (needs the maintainer's credentials; `uv build` verified clean at 0.1.0); model-graded eval across the corpus (per-server, with read-scoped tokens, by whoever wants that server's matrix — see corpus.md); the `(error)` column for truncation/malformed-JSON no-calls.

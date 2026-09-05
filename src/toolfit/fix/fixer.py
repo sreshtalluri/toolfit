@@ -19,11 +19,26 @@ similar tool:
 
 Tool name: {tool_name}
 Current description: {current_description}
-Other tools in the same catalog: {other_tool_names}
+Parameters: {parameters}
+Other tools in the same catalog:
+{other_tools}
 
 Write a replacement description (one sentence) that clearly distinguishes this tool from the \
-others, states what it does and what arguments it needs. Reply with just the new description \
-text, nothing else."""
+others, states what it does and what arguments it needs. Mention only the parameters and values \
+listed above — do not invent optional fields, defaults, or example values. Reply with just the new \
+description text, nothing else."""
+
+
+def _describe_parameters(input_schema: dict | None) -> str:
+    if not input_schema or not input_schema.get("properties"):
+        return "(none)"
+    required = set(input_schema.get("required", []))
+    parts = []
+    for name, prop in input_schema["properties"].items():
+        kind = prop.get("type") or ("one of " + "/".join(str(b.get("type")) for b in prop.get("anyOf", [])))
+        detail = f", values: {', '.join(map(str, prop['enum']))}" if "enum" in prop else ""
+        parts.append(f"{name} ({kind}{', required' if name in required else ', optional'}{detail})")
+    return "; ".join(parts)
 
 
 @dataclass
@@ -36,12 +51,23 @@ class ProposedFix:
 
 
 def propose_fix(
-    client: anthropic.Anthropic, *, tool_name: str, current_description: str, other_tool_names: list[str]
+    client: anthropic.Anthropic,
+    *,
+    tool_name: str,
+    current_description: str,
+    other_tool_names: list[str],
+    input_schema: dict | None = None,
+    other_descriptions: dict[str, str] | None = None,
 ) -> ProposedFix:
+    # The rewriter has to see the real parameters and the neighbours' real wording: without them
+    # (first live run, 2026-09-05) it invented "optional description, due date" and enum values
+    # that don't exist, and the rewrite measured worse than the original.
+    other_descriptions = other_descriptions or {}
     prompt = _PROMPT_TEMPLATE.format(
         tool_name=tool_name,
         current_description=current_description,
-        other_tool_names=", ".join(other_tool_names),
+        parameters=_describe_parameters(input_schema),
+        other_tools="\n".join(f"- {n}: {other_descriptions.get(n, '(no description)')}" for n in other_tool_names),
     )
     response = client.messages.create(
         model=FIXER_MODEL,
@@ -52,7 +78,7 @@ def propose_fix(
     # so response.content[0] is not guaranteed to be the text block — found and fixed as a
     # Task 3 review finding (SDD ledger), applied here preemptively since taskgen.py had the
     # identical bug.
-    new_description = next(block.text for block in response.content if block.type == "text").strip()
+    new_description = next((block.text for block in response.content if block.type == "text"), "").strip()
     return _validate(tool_name, current_description, new_description)
 
 
@@ -125,7 +151,12 @@ def run_fix_loop(
         ]
         others = confused_with + [n for n in catalog.names() if n != tool_name and n not in confused_with]
         proposal = propose_fix(
-            client, tool_name=tool_name, current_description=tool.description or "", other_tool_names=others
+            client,
+            tool_name=tool_name,
+            current_description=tool.description or "",
+            other_tool_names=others,
+            input_schema=tool.input_schema,
+            other_descriptions={t.name: t.description or "" for t in catalog.tools},
         )
         if proposal.rejected:
             verdicts.append(FixVerdict(proposal, None))
