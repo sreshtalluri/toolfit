@@ -99,7 +99,13 @@ def grade_sequence(task: GeneratedTask, calls: list[ToolCall], *, catalog_tool_n
                 hallucinated=False,
                 no_call=False,
                 steps_to_correct=i + 1,
-                preceding=[c.tool_name for c in named[:i] if c.tool_name is not None],
+                # A retry of the intended tool or a hallucinated name is not a precondition; the
+                # graph would otherwise grow self-loops and nodes for tools that don't exist.
+                preceding=[
+                    c.tool_name
+                    for c in named[:i]
+                    if c.tool_name is not None and c.tool_name != task.tool_name and c.tool_name in catalog_tool_names
+                ],
             )
     correct_tool = any(c.tool_name == task.tool_name for c in named)
     # Failure Mode (design doc): a hallucinated/nonexistent tool name is scored as a miss, never

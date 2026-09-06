@@ -92,6 +92,14 @@ def _result_text(result_for: ResultFor, call: ToolCall) -> str:
 
 
 def _block_dict(block: object) -> dict:
+    """Assistant content to send back on the next turn. text/tool_use are rebuilt from the fields
+    the API accepts (an SDK object may carry extras it would reject); thinking blocks go back
+    verbatim because their signatures are verified."""
+    kind = getattr(block, "type", None)
+    if kind == "text":
+        return {"type": "text", "text": block.text}
+    if kind == "tool_use":
+        return {"type": "tool_use", "id": getattr(block, "id", ""), "name": block.name, "input": block.input}
     dump = getattr(block, "model_dump", None)
     return dump(exclude_none=True) if dump else dict(vars(block))
 

@@ -55,7 +55,19 @@ def test_grade_sequence_single_call_matches_the_old_rule():
 def test_grade_sequence_right_tool_wrong_args_then_right_args_passes_on_the_later_call():
     calls = [ToolCall("git_commit", {"repo_path": "/wrong"}), ToolCall("git_commit", {"repo_path": "/r"})]
     r = grade_sequence(_task(), calls, catalog_tool_names=["git_commit"])
-    assert r.passed and r.steps_to_correct == 2 and r.preceding == ["git_commit"]
+    assert r.passed and r.steps_to_correct == 2
+    assert r.preceding == [] and not r.via_precondition  # a retry is not a precondition
+
+
+def test_grade_sequence_preceding_excludes_retries_and_hallucinated_names():
+    calls = [
+        ToolCall("git_commit", {"repo_path": "/wrong"}),
+        ToolCall("ghost", {}),
+        ToolCall("git_add", {"repo_path": "/r"}),
+        ToolCall("git_commit", {"repo_path": "/r"}),
+    ]
+    r = grade_sequence(_task(), calls, catalog_tool_names=["git_add", "git_commit"])
+    assert r.passed and r.steps_to_correct == 4 and r.preceding == ["git_add"]
 
 
 # --- adapters --------------------------------------------------------------------------------
@@ -81,9 +93,11 @@ def test_anthropic_run_chains_calls_and_feeds_synthetic_results_back():
     adapter = AnthropicAdapter(client, model="m")
     calls = adapter.run(task_text="commit", tools=_catalog().tools, max_steps=3, result_for=lambda c: {"ok": True, "for": c.tool_name})
     assert [c.tool_name for c in calls] == ["git_add", "git_commit"]
-    # Second request carried the assistant turn plus a tool_result for git_add.
+    # Second request carried the assistant turn (rebuilt from API-accepted fields only) plus a
+    # tool_result for git_add.
     second = sent[1]
     assert second[1]["role"] == "assistant"
+    assert second[1]["content"] == [{"type": "tool_use", "id": "id0", "name": "git_add", "input": {"repo_path": "/r"}}]
     result_block = second[2]["content"][0]
     assert result_block["type"] == "tool_result" and result_block["tool_use_id"] == "id0"
     assert json.loads(result_block["content"]) == {"ok": True, "for": "git_add"}
@@ -211,7 +225,8 @@ def test_render_shows_preconditions_graph_and_undeclared_findings(monkeypatch):
     out = render_confusion_matrix(m)
     assert "## Preconditions (observed)" in out
     assert "- git_add → git_commit: 4/4 trials" in out
-    assert "```mermaid" in out and "git_add -->|4/4| git_commit" in out
+    assert "```mermaid" in out
+    assert 't0["git_add"]' in out and 't1["git_commit"]' in out and "t0 -->|4/4| t1" in out
     assert "## Undeclared Preconditions" in out
     assert "Max steps per task: 3" in out
 

@@ -116,11 +116,23 @@ def render_confusion_matrix(matrix: ConfusionMatrix) -> str:
             n = len(matrix.trials_by_tool.get(intended, []))
             for earlier, count in sorted(matrix.precondition_edges[intended].items(), key=lambda kv: -kv[1]):
                 lines.append(f"- {earlier} → {intended}: {count}/{n} trials")
-        lines += ["", "```mermaid", "graph LR"]
+        # Mermaid node ids can't be raw tool names (spaces, dots, keywords like `end`): use
+        # sanitised ids with quoted labels.
+        node_ids: dict[str, str] = {}
+
+        def node(name: str) -> str:
+            if name not in node_ids:
+                node_ids[name] = f"t{len(node_ids)}"
+            return node_ids[name]
+
+        edge_lines = []
         for intended in sorted(matrix.precondition_edges):
             n = len(matrix.trials_by_tool.get(intended, []))
             for earlier, count in sorted(matrix.precondition_edges[intended].items()):
-                lines.append(f"  {earlier} -->|{count}/{n}| {intended}")
+                edge_lines.append(f"  {node(earlier)} -->|{count}/{n}| {node(intended)}")
+        lines += ["", "```mermaid", "graph LR"]
+        lines += [f'  {nid}["{name}"]' for name, nid in node_ids.items()]
+        lines += edge_lines
         lines.append("```")
         undeclared = undeclared_preconditions(matrix)
         if undeclared:
