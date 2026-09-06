@@ -293,3 +293,23 @@ Three public servers evaluated end-to-end (`docs/corpus.md`, `docs/examples/`): 
 **Finding that reshapes M5:** the dominant off-diagonal mass on real servers is *precondition* calls — `git_add` before `git_commit`, `list_allowed_directories` before any path operation. The model is correct and the single-step grader is strict. The matrix surfaces it cleanly (one column lights up), but the fix is not a description: it is either stating the precondition in the description ("paths are validated for you") or a multi-step harness that grades the *sequence*. That makes M5 (multi-turn) the next milestone with the strongest evidence behind it, ahead of failure injection.
 
 **Fix-loop guidance from the data:** Bonferroni across every proposal in a 14-tool catalog at n=10 cannot accept anything (α=0.004). Recommend `--fix` on the two or three tools the matrix names, at `--seeds 20`. `--fix-tool NAME` (repeatable) exists for exactly this.
+
+## M5 Design — multi-step trials and the observed precondition graph (2026-09-05)
+
+**Evidence:** on real servers the dominant off-diagonal mass is *precondition* calls — `git_add` before `git_commit` (5/10), `list_allowed_directories` before seven filesystem tools (4–8 each). The model is right; a single-call grader is strict, and a description rewrite cannot move it (the fix loop correctly rejected every attempt). So the grader changes, not the descriptions.
+
+**Observed, not declared.** Composio-style dependency graphs are authored by the provider. toolfit builds the graph from behaviour: across trials, which tools were called *before* the correct call of T. Edge `A → T (k/n)`. Then it diffs the graph against the catalog text: an edge with rate ≥ 0.3 whose target description never mentions A is an `undeclared_precondition` finding. Authors act one of two ways — state it ("requires staged changes; call git_add first") or make T self-sufficient — and re-run to see both the pass rate and the precondition rate move. No `toolfit.yaml` declaration file: MCP has no standard for it and authors would not write it; the observed graph is the thing nobody else provides.
+
+**Trials.** `--max-steps N` (default 3; `1` reproduces 0.1.x exactly). The model may make up to N calls; after each, the harness returns a synthetic result and lets it continue. Dry run stays absolute: nothing is ever executed on the server.
+
+**Pass rule: anywhere in the sequence.** A trial passes if the intended tool is called with matching arguments at any step. `steps_to_correct` is recorded so "right call, then kept going" stays visible. Rejected alternative: require it be the *last* call — punishes agents that verify after acting, which is normal behaviour.
+
+**Synthetic results: no model in the loop.** If the tool declares `outputSchema`, sample it with the input sampler (same seed discipline); else `{"ok": true}`. Rejected alternative: an LLM fabricating plausible results — it would steer the model under test, reintroducing a model's opinion into the one number the project promises is opinion-free. Cost accepted: lookup-then-act chains get a stub with no id; in practice the ids are already in the task text.
+
+**Matrix stays *intended × first call*.** Comparable with 0.1.x and it still shows the `git_add` column; the new `## Preconditions (observed)` section and a mermaid graph explain it. Pass rates now mean "reached with correct arguments within N steps" — a semantic change, so this is 0.2.0 and the CHANGELOG says pass rates rise on servers with precondition tools.
+
+**Fix loop.** Acceptance rule unchanged (exact McNemar on pass). `MutationTrialResult` also carries precondition counts before/after, rendered informationally, so "I stated the precondition" and "I made it self-sufficient" are both verifiable.
+
+**Adapters own the multi-turn formats** (Anthropic `tool_result` blocks vs OpenAI `role: tool` messages): `ModelAdapter.run(task_text, tools, *, max_steps, result_for) -> list[ToolCall]`; `call_with_tools` is `run(max_steps=1)`. Parallel tool_use blocks in one response count as consecutive steps in the order returned.
+
+**Cost.** Extra model-under-test calls only when the model actually chains. Measured on mcp-server-git, 12 tools × 10 seeds: 1177 s vs ~500 s single-step — about 2×, not the +30% first estimated; the model verifies after acting more often than expected.

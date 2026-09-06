@@ -85,9 +85,41 @@ Same command against three public servers, model under test `claude-sonnet-5`, 1
 
 The git and filesystem results share a cause that a description can't fix: **the model takes a
 correct precondition step** — stage before commit, check allowed directories before touching a
-path — and a single-step eval scores it as the wrong tool. That column in the confusion matrix is
-the finding; it tells you which tools need their precondition stated ("paths are validated for
-you") or a multi-step harness. toolfit does not paper over it by grading the first call leniently.
+path — and a single-call grader scores it as the wrong tool. Those numbers were 0.1.x.
+
+**0.2.0 grades the sequence.** The model may make up to `--max-steps` (default 3) calls, each
+answered with a synthetic result, and the task passes if the intended tool is called correctly at
+any step. Same git server, same 10 seeds
+([`docs/examples/mcp-server-git-multistep/`](docs/examples/mcp-server-git-multistep/)):
+
+```
+- git_commit: 10/10 (100%), 95% CI [72%, 100%]        # was 4/10
+
+## Preconditions (observed)
+- git_add → git_commit: 7/10 trials
+- git_status → git_commit: 1/10 trials
+
+## Undeclared Preconditions
+- git_commit: models call git_add first in 7/10 trials, but git_commit's
+  description never mentions git_add
+```
+
+That last line is the deliverable. It is the dependency graph the *model* believes in, built from
+behaviour rather than declared by anyone, diffed against what your catalog says. You fix it one of
+two ways — state the precondition in `git_commit`'s description, or make the tool stage for you —
+and re-run: `--mutate`/`--fix` report *reached via an earlier call: before → after* so either
+choice is verifiable. The confusion matrix still shows the first call, so 0.1.x matrices stay
+comparable; `--max-steps 1` reproduces them exactly. Cost: roughly 2× the wall time on servers
+where the model actually chains.
+
+The filesystem server tells the other half of the story
+([`docs/examples/server-filesystem-multistep/`](docs/examples/server-filesystem-multistep/)):
+**55% → 79%**, but not uniformly. Tools that were losing to a precondition went to 5/5
+(`create_directory`, `get_file_info`, `move_file`, `directory_tree`); tools failing on *arguments*
+stayed put (`read_multiple_files` 0/5), and the deprecated `read_file` stayed at 0. The graph shows
+`list_allowed_directories` feeding eleven tools and `search_files` feeding three as a lookup step.
+That's the grader telling precondition problems apart from description problems — which is what
+you need to know before rewriting anything.
 
 Twelve rewrites were proposed for the filesystem server. Five improved the number (`8→10`,
 `6→8`); none were accepted, because one Bonferroni correction across twelve proposals at n=10

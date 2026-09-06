@@ -185,7 +185,7 @@ def test_eval_mutate_skips_a_tool_excluded_by_a_schema_warning(monkeypatch):
 
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
-    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds: matrix)
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1: matrix)
 
     result = runner.invoke(app, ["eval", "somepath", "--mutate", "tool_b:new description"])
 
@@ -230,12 +230,12 @@ def test_eval_mutate_applies_bonferroni_correction_across_multiple_mutations(mon
         ),
     }
 
-    def fake_run_mutation_trials(matrix, catalog, adapter, *, tool_name, new_description):
+    def fake_run_mutation_trials(matrix, catalog, adapter, *, tool_name, new_description, max_steps=1):
         return preset_results[tool_name]
 
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
-    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds: matrix)
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1: matrix)
     monkeypatch.setattr(cli, "run_mutation_trials", fake_run_mutation_trials)
 
     result = runner.invoke(
@@ -314,7 +314,7 @@ def test_eval_badge_writes_an_svg_file(monkeypatch, tmp_path, capsys):
 
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
-    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds: matrix)
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1: matrix)
 
     result = runner.invoke(app, ["eval", "somepath", "--badge"])
 
@@ -350,8 +350,8 @@ def test_eval_fix_reports_verdicts_writes_json_and_feeds_the_badge(monkeypatch, 
 
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
-    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds: matrix)
-    monkeypatch.setattr(cli, "run_fix_loop", lambda m, c, a, g, only=None: [FixVerdict(proposal, trial)])
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1: matrix)
+    monkeypatch.setattr(cli, "run_fix_loop", lambda m, c, a, g, only=None, max_steps=1: [FixVerdict(proposal, trial)])
 
     result = runner.invoke(app, ["eval", "somepath", "--fix", "--badge", "--seeds", "2"])
 
@@ -405,9 +405,9 @@ def test_eval_badge_mutate_and_strict_together_still_writes_the_badge_before_exi
 
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
-    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds: matrix)
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1: matrix)
     monkeypatch.setattr(
-        cli, "run_mutation_trials", lambda matrix, catalog, adapter, *, tool_name, new_description: mutation_result
+        cli, "run_mutation_trials", lambda matrix, catalog, adapter, *, tool_name, new_description, max_steps=1: mutation_result
     )
 
     result = runner.invoke(
@@ -474,7 +474,7 @@ def test_eval_strict_exits_one_when_a_tools_pass_rate_is_below_threshold(monkeyp
 
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
-    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds: matrix)
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1: matrix)
 
     result = runner.invoke(app, ["eval", "somepath", "--strict"])
 
@@ -506,7 +506,7 @@ def test_eval_strict_exits_zero_when_every_tools_pass_rate_meets_the_threshold(m
 
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
-    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds: matrix)
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1: matrix)
 
     result = runner.invoke(app, ["eval", "somepath", "--strict"])
 
@@ -548,7 +548,7 @@ def test_eval_strict_warns_about_tools_excluded_by_schema_warnings(monkeypatch):
 
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
-    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds: matrix)
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1: matrix)
 
     result = runner.invoke(app, ["eval", "somepath", "--strict"])
 
@@ -580,7 +580,7 @@ def test_eval_without_strict_exits_zero_regardless_of_pass_rate(monkeypatch):
 
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
-    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds: matrix)
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1: matrix)
 
     result = runner.invoke(app, ["eval", "somepath"])
 

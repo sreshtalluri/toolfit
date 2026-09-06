@@ -143,6 +143,7 @@ def run_fix_loop(
     adapter: ModelAdapter,
     client: anthropic.Anthropic,
     only: set[str] | None = None,
+    max_steps: int = 1,
 ) -> list[FixVerdict]:
     """M4 fix loop (design doc Pipeline: mutation output -> fix/ -> re-verify). For every tool with
     at least one failed trial: propose a rewrite, then re-run that tool's OWN base tasks against a
@@ -177,7 +178,7 @@ def run_fix_loop(
             verdicts.append(FixVerdict(proposal, None))
             continue
         trial = run_mutation_trials(
-            matrix, catalog, adapter, tool_name=tool_name, new_description=proposal.new_description
+            matrix, catalog, adapter, tool_name=tool_name, new_description=proposal.new_description, max_steps=max_steps
         )
         verdicts.append(FixVerdict(proposal, trial))
     return verdicts

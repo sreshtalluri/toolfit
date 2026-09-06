@@ -8,10 +8,10 @@ from dataclasses import dataclass
 
 from toolfit.connect.client import ToolCatalog
 from toolfit.gen.taskgen import GeneratedTask
-from toolfit.grade.confusion import ConfusionMatrix
-from toolfit.grade.grader import GradeResult, grade
+from toolfit.grade.confusion import ConfusionMatrix, synthetic_result
+from toolfit.grade.grader import GradeResult, grade, grade_sequence
 from toolfit.grade.significance import paired_exact_pvalue
-from toolfit.run.adapters import ModelAdapter
+from toolfit.run.adapters import ModelAdapter, run_steps
 
 
 @dataclass
@@ -64,6 +64,8 @@ class MutationTrialResult:
     # mutation tested together in one CLI invocation — this dataclass doesn't correct itself,
     # since correction depends on how many other mutations ran alongside it (design doc M2 §1).
     corrected_alpha: float | None = None  # alpha / number of tests in this run, set by the caller
+    before_preconditions: int = 0  # passing trials that reached the tool via an earlier call
+    after_preconditions: int = 0
 
 
 def run_mutation_trials(
@@ -73,6 +75,7 @@ def run_mutation_trials(
     *,
     tool_name: str,
     new_description: str,
+    max_steps: int = 1,
 ) -> MutationTrialResult:
     """Paired mutation trial (design doc M2 Design §3): reuses the EXACT tasks the confusion
     matrix already ran for `tool_name` as 'before' — no repeat API calls, and a guarantee that
@@ -83,13 +86,22 @@ def run_mutation_trials(
     """
     trials = matrix.trials_by_tool[tool_name]
     before_passes = [t.passed for t in trials]
+    before_preconditions = sum(1 for t in trials if t.via_precondition)
+    after_preconditions = 0
 
     patched_catalog = patch_description(catalog, tool_name=tool_name, new_description=new_description)
     after_passes = []
     for trial in trials:
-        call = adapter.call_with_tools(task_text=trial.task.text, tools=patched_catalog.tools)
-        result = grade(trial.task, call, catalog_tool_names=patched_catalog.names())
+        calls = run_steps(
+            adapter,
+            task_text=trial.task.text,
+            tools=patched_catalog.tools,
+            max_steps=max_steps,
+            result_for=synthetic_result(patched_catalog, seed=len(after_passes) + 1),
+        )
+        result = grade_sequence(trial.task, calls, catalog_tool_names=patched_catalog.names())
         after_passes.append(result.passed)
+        after_preconditions += int(result.via_precondition)
 
     p_value = paired_exact_pvalue(before_passes, after_passes)
     return MutationTrialResult(
@@ -98,4 +110,6 @@ def run_mutation_trials(
         before_passes=before_passes,
         after_passes=after_passes,
         p_value=p_value,
+        before_preconditions=before_preconditions,
+        after_preconditions=after_preconditions,
     )

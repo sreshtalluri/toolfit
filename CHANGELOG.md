@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.0 (2026-09-05)
+
+**Pass rates change meaning — and go up on servers with precondition tools.** Trials are now
+multi-step: the model may make up to `--max-steps` calls (default 3), each answered with a
+synthetic result, and a task passes if the intended tool is called correctly at any step.
+`--max-steps 1` restores 0.1.x grading exactly.
+
+- New report sections: **Preconditions (observed)** — the tools the model called before the
+  correct one, as a list and a mermaid graph — and **Undeclared Preconditions**: dependencies
+  the model follows in ≥30% of trials that the target tool's description never mentions.
+- `--mutate` / `--fix` verdicts show precondition counts before → after alongside pass rates.
+- Roughly 2× wall time on servers where the model chains (measured: mcp-server-git 1177 s vs ~500 s).
+- Synthetic results come from the tool's `outputSchema` when declared, else `{"ok": true}`;
+  never from a model.
+- The confusion matrix is still *intended × first call*, so 0.1.x matrices remain comparable.
+
 ## 0.1.1 (2026-09-05)
 
 - `AGENTS.md`: operating manual for agents installing/running toolfit on a user's behalf, verified against the published wheel in a fresh venv.
