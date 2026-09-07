@@ -310,5 +310,29 @@ def test_render_lists_no_call_replies_for_failed_trials_only():
     }
     report = render_confusion_matrix(matrix)
     assert "## No-Call Replies" in report
-    assert "- snooze_alert (seed 1): Which alert should I snooze?" in report
+    assert "- snooze_alert (seed 1, asked): Which alert should I snooze?" in report
     assert "(seed 2)" not in report
+
+
+def test_render_argument_failures_per_parameter_and_tags_no_call_replies():
+    from toolfit.gen.taskgen import GeneratedTask
+    from toolfit.grade.confusion import TrialRecord
+    from toolfit.run.adapters import ToolCall
+
+    matrix = ConfusionMatrix()
+    for _ in range(3):
+        matrix.record(intended_tool="create_flag", actual_tool="create_flag")
+    matrix.trials_per_tool = {"create_flag": 3}
+    matrix.distinct_trials = {"create_flag": 3}
+    task = GeneratedTask(text="make a flag", tool_name="create_flag", arguments={})
+    matrix.trials_by_tool = {
+        "create_flag": [
+            TrialRecord(task=task, passed=False, calls=[ToolCall("create_flag", {})], arg_diff={"default_on": "wrong"}),
+            TrialRecord(task=task, passed=False, calls=[ToolCall("create_flag", {})], arg_diff={"default_on": "wrong", "description": "missing"}),
+            TrialRecord(task=task, passed=False, calls=[ToolCall(None, {}, text="I can't create flags without a key.")]),
+        ]
+    }
+    report = render_confusion_matrix(matrix)
+    assert "## Argument Failures" in report
+    assert "- create_flag: default_on wrong 2/3; description missing 1/3" in report
+    assert "- create_flag (seed 3, refused): I can't create flags without a key." in report

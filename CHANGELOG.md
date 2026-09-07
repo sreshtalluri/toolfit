@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- `--workers N` (default 4): tools are evaluated concurrently; each tool's own calls stay
+  sequential and outcomes are committed in catalog order, so the report is unchanged for a given
+  set of answers. Design doc Eng Req #1, finally.
+- **Argument Failures** section: per-parameter `missing` / `extra` / `wrong` / `* unparseable`
+  counts for trials that reached the right tool. Structural, no model opinion. This is the answer
+  to "strong models don't fail for description reasons, so what do they fail on": the field.
+- No-call replies are tagged `asked` / `refused` / `other`.
+- Sampler example pools widened (12 titles, 8 notes, 6 ids): `create_task` could only produce
+  nine distinct argument sets, so seeds past nine were correlated repeats (9/20 distinct measured).
+
 ## 0.2.1 (2026-09-07)
 
 First run with a model that actually gets confused (Llama 3.1 8B via OpenRouter, toy server,

@@ -11,7 +11,7 @@ from toolfit.run.adapters import ToolCall
 
 _SIMPLE_SCHEMA = {
     "type": "object",
-    "properties": {"title": {"type": "string"}},
+    "properties": {"title": {"type": "string", "enum": ["Write Q3 report"]}},  # pinned so fakes can match
     "required": ["title"],
 }
 
@@ -269,3 +269,31 @@ def test_malformed_arguments_with_a_tool_name_count_as_the_right_tool_with_wrong
     matrix = build_confusion_matrix(CATALOG, _MalformedArgsAdapter(), _fake_generator_client(), seeds=1)
     assert matrix.counts["tool_a"] == {"tool_a": 1}  # routing was right...
     assert matrix.trials_by_tool["tool_a"][0].passed is False  # ...the arguments were not
+
+
+def test_build_confusion_matrix_with_workers_matches_sequential_and_keeps_catalog_order():
+    import threading
+
+    seen_threads: set[int] = set()
+
+    class _ThreadRecordingAdapter:
+        def call_with_tools(self, *, task_text, tools):
+            seen_threads.add(threading.get_ident())
+            return ToolCall(tool_name="tool_a", arguments={"title": "Write Q3 report"})
+
+    tools = [Tool(name=f"tool_{i}", description=f"Does {i}.", inputSchema=_SIMPLE_SCHEMA) for i in range(6)]
+    catalog = ToolCatalog(tools=tools)
+    seq = build_confusion_matrix(catalog, _ThreadRecordingAdapter(), _fake_generator_client(), seeds=2, workers=1)
+    par = build_confusion_matrix(catalog, _ThreadRecordingAdapter(), _fake_generator_client(), seeds=2, workers=4)
+    assert par.counts == seq.counts and par.trials_per_tool == seq.trials_per_tool
+    assert list(par.counts) == [t.name for t in tools]  # committed in catalog order, not completion order
+    assert len(seen_threads) > 1
+
+
+def test_build_confusion_matrix_records_arg_diff_on_trials():
+    class _DropsTitle:
+        def call_with_tools(self, *, task_text, tools):
+            return ToolCall(tool_name="tool_a", arguments={})
+
+    matrix = build_confusion_matrix(ToolCatalog(tools=[CATALOG.tools[0]]), _DropsTitle(), _fake_generator_client(), seeds=1)
+    assert matrix.trials_by_tool["tool_a"][0].arg_diff == {"title": "missing"}

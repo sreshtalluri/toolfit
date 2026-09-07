@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from toolfit.connect.client import ToolCatalog
 from toolfit.fix.fixer import FixVerdict, ProposedFix
 from toolfit.gen.taskgen import GeneratedTask
@@ -73,6 +75,18 @@ def render_spike_report(
     return "\n".join(lines)
 
 
+_REFUSAL = re.compile(r"\b(can(?:no|')t|cannot|won't|unable|not able|don't have|do not have|not (?:allowed|permitted|possible)|deprecated)\b", re.I)
+
+
+def _classify_reply(text: str) -> str:
+    """Coarse, structural tag for a no-call reply: did the model ask, refuse, or just talk?"""
+    if "?" in text:
+        return "asked"
+    if _REFUSAL.search(text):
+        return "refused"
+    return "other"
+
+
 def render_confusion_matrix(matrix: ConfusionMatrix) -> str:
     tools = sorted(matrix.counts.keys())
     actual_values = {actual for row in matrix.counts.values() for actual in row}
@@ -142,12 +156,35 @@ def render_confusion_matrix(matrix: ConfusionMatrix) -> str:
             lines.append("")
             lines += [f"- {u}" for u in undeclared]
 
+    arg_lines = []
+    for tool in tools:
+        trials = matrix.trials_by_tool.get(tool, [])
+        tally: dict[tuple[str, str], int] = {}
+        for trial in trials:
+            for param, why in trial.arg_diff.items():
+                tally[(param, why)] = tally.get((param, why), 0) + 1
+        if tally:
+            parts = [f"{param} {why} {n}/{len(trials)}" for (param, why), n in sorted(tally.items(), key=lambda kv: -kv[1])]
+            arg_lines.append(f"- {tool}: " + "; ".join(parts))
+    if arg_lines:
+        # Right tool, wrong arguments, broken down per parameter. On strong models this is where
+        # most of the remaining failures are, and "wrong args" alone told an author nothing.
+        lines += [
+            "",
+            "## Argument Failures",
+            "",
+            "Trials that reached the right tool with the wrong arguments, per parameter: `missing` = "
+            "expected but not sent, `extra` = sent but not expected, `wrong` = value differs, "
+            "`* unparseable` = the argument JSON could not be parsed.",
+            "",
+        ] + arg_lines
+
     no_call_lines = []
     for tool in tools:
         for seed, trial in enumerate(matrix.trials_by_tool.get(tool, []), start=1):
             replies = [c.text for c in trial.calls if c.tool_name is None and c.text]
             if replies and not trial.passed:
-                no_call_lines.append(f"- {tool} (seed {seed}): {replies[0]}")
+                no_call_lines.append(f"- {tool} (seed {seed}, {_classify_reply(replies[0])}): {replies[0]}")
     if no_call_lines:
         # What the model said instead of calling: a question means the task or description left
         # something unstated; a refusal means the description reads as unsafe or the tool is

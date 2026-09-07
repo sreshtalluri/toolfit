@@ -106,7 +106,7 @@ can see in shell history.
 ### Cost and time, so you can warn the user first
 
 Calls ≈ `tools × seeds × 3` (generate, solvability check, model under test) + `seeds` per
-`--mutate` + `seeds + 1` per proposed fix. All sequential. `--only` replaces `tools` with the
+`--mutate` + `seeds + 1` per proposed fix. Tools run `--workers` (default 4) at a time; within a tool, calls are sequential. `--only` replaces `tools` with the
 number of tools named, which is how you re-measure one description cheaply. Observed with Sonnet 5:
 
 | Server | Tools | Seeds | Wall time |
@@ -133,6 +133,7 @@ toolfit eval <server> [--seeds N] [--max-steps N] [--model M] [--only NAME]... [
 | `--seeds` | 5 | tasks per tool. **Use 10+ whenever `--mutate`/`--fix` is on** — the exact test's floor p-value is 1/2ⁿ; the CLI warns below 10 |
 | `--max-steps` | 3 | calls the model may make per task; each gets a synthetic result and the task passes if the intended tool is called correctly at any step. `1` = single-call grading (0.1.x numbers) |
 | `--model` | `claude-sonnet-5` | model under test |
+| `--workers N` | 4 | tools evaluated concurrently; each tool's own calls stay sequential. `1` reproduces the sequential 0.2.x timings. Rate limits are retried with backoff, so leave it at 4 unless you see `RateLimitError` retries piling up on stderr |
 | `--only NAME` | — | generate tasks only for the named tools (repeatable); the model still sees the whole catalog on every call. **Use this when iterating on one description** with `--mutate`/`--fix-tool`: measured on mcp-server-git, the full 12-tool run at 20 seeds took 2551 s; `--only git_commit` at 10 seeds with one `--mutate` took 17 s. Every `--mutate`/`--fix-tool` tool must also be in `--only`, or the CLI exits 1 before spending anything |
 | `--mutate 'tool:text'` | — | re-run that tool's own tasks with its description replaced; repeatable. Unknown tool or empty text → exit 1 before any call |
 | `--fix` | off | propose + re-measure a rewrite for **every** tool with a failed trial |
@@ -175,10 +176,14 @@ the directory where the user wants them. The report is stdout; warnings and prog
    never silently dropped. Many solvability warnings
    on one tool usually mean the *catalog* is ambiguous (that's the finding) or the schema allows
    combinations the server doesn't (e.g. `head` and `tail` together).
-5. **No-Call Replies** — for each failed trial where the model called nothing, what it said
-   instead (clipped). A question means the task or description left something unstated; a
+5. **Argument Failures** — trials that reached the right tool with the wrong arguments, per
+   parameter: `missing` (expected, not sent), `extra` (sent, not expected), `wrong` (value differs
+   after canonicalisation), `* unparseable` (argument JSON could not be parsed). On strong models
+   this is where most remaining failures are; it names the field to document.
+6. **No-Call Replies** — for each failed trial where the model called nothing, what it said
+   instead (clipped), tagged `asked` / `refused` / `other`. A question means the task or description left something unstated; a
    refusal usually means the tool reads as unsafe or is marked deprecated. Neither is routing.
-6. **Schema Warnings** — tools excluded because the sampler couldn't produce arguments. They are
+7. **Schema Warnings** — tools excluded because the sampler couldn't produce arguments. They are
    **not** in any number above and don't trip `--strict`; `--strict` prints them on stderr. The
    sampler handles enums, formats, nullables, nested objects, arrays, numeric bounds, and local
    `$ref`/`allOf` (pydantic nested models); what still excludes a tool is a `pattern` regex, a

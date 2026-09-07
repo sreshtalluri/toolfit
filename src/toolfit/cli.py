@@ -55,6 +55,13 @@ def eval(
         "catalog, so this measures one tool against all its neighbours at a fraction of the cost — "
         "use it when iterating on a single description with --mutate or --fix-tool.",
     ),
+    workers: int = typer.Option(
+        4,
+        "--workers",
+        min=1,
+        help="Tools evaluated concurrently. Each tool's calls stay sequential; rate limits are "
+        "retried with backoff. 1 = the sequential 0.2.0 behaviour.",
+    ),
     mutate: list[str] = typer.Option(
         [],
         "--mutate",
@@ -99,6 +106,7 @@ def eval(
             max_steps=max_steps,
             model=model,
             only=set(only) if only else None,
+            workers=workers,
             mutate=mutate,
             fix=fix or bool(fix_tool),
             fix_tool=set(fix_tool),
@@ -191,6 +199,7 @@ async def _run_eval(
     max_steps: int,
     model: str,
     only: set[str] | None,
+    workers: int,
     mutate: list[str],
     fix: bool,
     fix_tool: set[str],
@@ -277,7 +286,7 @@ async def _run_eval(
     generator_client = anthropic.Anthropic()
     try:
         matrix = build_confusion_matrix(
-            catalog, adapter, generator_client, seeds=seeds, max_steps=max_steps, only=only
+            catalog, adapter, generator_client, seeds=seeds, max_steps=max_steps, only=only, workers=workers
         )
     except (anthropic.APIError, openai.APIError) as e:
         # Non-transient provider errors (400 invalid tool name, 401, exhausted retries) surface as a
