@@ -29,8 +29,8 @@ class GradeResult:
     preceding: list[str] = field(default_factory=list)  # tools called before the passing call
     # Why the arguments failed, per parameter, when the right tool was called with the wrong
     # arguments: "missing" (expected, not sent), "extra" (sent, not expected), "wrong" (value
-    # differs after canonicalisation), or {"*": "unparseable"} when the argument JSON was
-    # malformed. Structural, no model opinion — the same rule as the pass/fail itself.
+    # differs after canonicalisation), or {"*": <error>} when the argument JSON could not be
+    # parsed ("malformed argument JSON" / "duplicated argument JSON"). Structural, no model opinion — the same rule as the pass/fail itself.
     arg_diff: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -119,7 +119,7 @@ def grade_sequence(task: GeneratedTask, calls: list[ToolCall], *, catalog_tool_n
     arg_diff: dict[str, str] = {}
     if correct_tool:
         attempt = next(c for c in named if c.tool_name == task.tool_name)
-        arg_diff = {"*": "unparseable"} if attempt.error else diff_args(expected, _canonicalize_args(attempt.arguments))
+        arg_diff = {"*": attempt.error} if attempt.error else diff_args(expected, _canonicalize_args(attempt.arguments))
     return GradeResult(
         correct_tool=correct_tool, correct_args=False, hallucinated=hallucinated, no_call=False, arg_diff=arg_diff
     )

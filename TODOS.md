@@ -5,14 +5,13 @@ evidence would promote it; nothing is built on speculation.
 
 ## eval
 
-- **Accepted fix on the pass-rate axis.** Still none, and now for a measured reason rather than
-  a missing model. With Llama 3.1 8B the fixer's rewrite of `create_task` helped every time
-  (5/10 → 8/10; then 14/20 → 17/20 alone at 20 seeds, p=0.23 vs α=0.05,
-  `docs/examples/toy-server-llama/report-create_task-20seeds.md`) but a +15-point effect needs
-  roughly 40+ paired trials to clear 0.05. Two things would change this: (a) `--seeds 40` on one
-  tool is now cheap with `--only` (~2 min on Llama) — try it; (b) `create_task` sampled only
-  9/20 distinct argument sets, so half the trials are correlated repeats. The sampler's free-text
-  pool is too small; widen it before spending on more seeds. **Priority:** P1
+- **Accepted fix on the pass-rate axis.** Still none, and the reason is now precise. With Llama
+  3.1 8B on `create_task`, 40 seeds and the wider sampler pools: 15/40 → 20/40, p=0.11. The
+  Argument Failures section shows 18/40 trials were `duplicated argument JSON` (the model emits
+  `{...}{...}`), a ceiling no description can move. The demo needs a tool whose failures are
+  description-shaped: pick it from the multi-model sweep (`docs/models.md`) — the tool with the
+  highest `wrong`/`missing` count and the lowest unparseable count on a mid-tier model — then
+  `--only TOOL --fix-tool TOOL --seeds 40`. **Priority:** P1
 - **Non-Anthropic model under test.** Done 2026-09-06 (Llama 3.1 8B via OpenRouter, toy server,
   `docs/examples/toy-server-llama/`). Next: the same model on `examples/ops_server.py` at 49
   tools — expect malformed-JSON and argument failures to dominate. **Priority:** P2

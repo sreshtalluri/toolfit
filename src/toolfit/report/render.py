@@ -175,7 +175,7 @@ def render_confusion_matrix(matrix: ConfusionMatrix) -> str:
             "",
             "Trials that reached the right tool with the wrong arguments, per parameter: `missing` = "
             "expected but not sent, `extra` = sent but not expected, `wrong` = value differs, "
-            "`* unparseable` = the argument JSON could not be parsed.",
+            "`* malformed/duplicated argument JSON` = the argument text could not be parsed.",
             "",
         ] + arg_lines
 

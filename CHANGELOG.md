@@ -5,10 +5,16 @@
 - `--workers N` (default 4): tools are evaluated concurrently; each tool's own calls stay
   sequential and outcomes are committed in catalog order, so the report is unchanged for a given
   set of answers. Design doc Eng Req #1, finally.
-- **Argument Failures** section: per-parameter `missing` / `extra` / `wrong` / `* unparseable`
+- **Argument Failures** section: per-parameter `missing` / `extra` / `wrong` / `* malformed/duplicated argument JSON`
   counts for trials that reached the right tool. Structural, no model opinion. This is the answer
   to "strong models don't fail for description reasons, so what do they fail on": the field.
 - No-call replies are tagged `asked` / `refused` / `other`.
+- Unparseable argument JSON is classified: `duplicated argument JSON` (`{...}{...}`, a valid
+  object followed by another) vs `malformed argument JSON`. Found by the first Argument Failures
+  section on a 40-seed Llama 3.1 8B run (`docs/examples/toy-server-llama/report-create_task-40seeds.md`):
+  18 of 25 `create_task` failures were the object emitted twice. The fixer's rewrite still went
+  15/40 → 20/40 (p=0.11, rejected), and now the report says why it can't do better: a description
+  cannot fix a model that emits its arguments twice.
 - Sampler example pools widened (12 titles, 8 notes, 6 ids): `create_task` could only produce
   nine distinct argument sets, so seeds past nine were correlated repeats (9/20 distinct measured).
 

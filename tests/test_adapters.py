@@ -454,3 +454,16 @@ def test_run_steps_keeps_a_no_call_that_carries_reply_text():
 
     calls = run_steps(_Asks(), task_text="x", tools=TOOLS, max_steps=1, result_for=lambda _: {})
     assert [c.text for c in calls] == ["Which one?"]
+
+
+def test_duplicated_argument_json_is_named_as_such():
+    from toolfit.run.adapters import _classify_bad_json
+
+    assert _classify_bad_json('{"a": 1}{"a": 1}') == "duplicated argument JSON"
+    assert _classify_bad_json('{"a": 1') == "malformed argument JSON"
+    assert _classify_bad_json('{"a": 1} trailing words') == "malformed argument JSON"
+    fake_call = _FakeToolCall("create_task", '{"title": "x", "priority": "low"}{"title": "x", "priority": "low"}')
+    fake_response = _FakeOpenAIResponse(choices=[_FakeOpenAIChoice(_FakeOpenAIMessage(tool_calls=[fake_call]))])
+    adapter = OpenAIAdapter(_FakeOpenAIClient(fake_response), model="gpt-5.5")
+    result = adapter.call_with_tools(task_text="x", tools=TOOLS)
+    assert (result.tool_name, result.error) == ("create_task", "duplicated argument JSON")

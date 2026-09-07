@@ -1,9 +1,9 @@
 """Model-under-test adapters for all three M2 providers (design doc M2 Design §2). AnthropicAdapter
 and OpenAIAdapter are native clients; OpenRouterAdapter routes through OpenRouter's
 OpenAI-compatible endpoint and shares its call logic with OpenAIAdapter via
-_openai_compatible_call. build_confusion_matrix (M1) and run_mutation_trials (M2) both call
-adapters sequentially by design; concurrency (Engineering Requirement #1) remains explicitly out
-of scope. Retry/backoff (Engineering Requirement #2, design doc M3a Design §1) is handled here via
+_openai_compatible_call. build_confusion_matrix (M1) runs tools across threads (--workers) and calls each tool's
+adapters sequentially within the tool; run_mutation_trials (M2) is sequential. Retry/backoff
+(Engineering Requirement #2, design doc M3a Design §1) is handled here via
 _with_retry, which wraps only the network-call line inside call_with_tools — never the whole
 method, so parsing failures (malformed JSON, empty choices, max_tokens truncation) are never
 retried, only a genuine rate-limit response.
@@ -94,6 +94,18 @@ def run_steps(
         # reply text is kept so the report can tally (error) or show what the model said.
         return [call] if call.tool_name is not None or call.error or call.text else []
     return run(task_text=task_text, tools=tools, max_steps=max_steps, result_for=result_for)
+
+
+def _classify_bad_json(raw: str) -> str:
+    """Structural label for argument text json.loads rejected."""
+    try:
+        first, end = json.JSONDecoder().raw_decode(raw.strip())
+    except json.JSONDecodeError:
+        return "malformed argument JSON"
+    rest = raw.strip()[end:].strip()
+    if rest.startswith("{"):
+        return "duplicated argument JSON"  # `{...}{...}`: a valid object followed by another
+    return "malformed argument JSON"
 
 
 def _clip(text: str, limit: int = 240) -> str:
@@ -222,10 +234,13 @@ def _openai_compatible_run(
                 # Malformed tool-call JSON is a model-output problem, not a server schema problem
                 # (never let the ValueError subclass reach confusion.py's schema-error handler).
                 # The model DID pick a tool, so keep the name: the grader scores it as right tool,
-                # unreadable arguments — an argument failure, not a routing one. Seen 6 times in
-                # 50 tasks with Llama 3.1 8B; as a no-call it read as the model ignoring the tool.
-                print(f"WARNING: model returned malformed tool-call JSON arguments: {tc.function.arguments!r}", file=sys.stderr)
-                call = ToolCall(tool_name=tc.function.name, arguments={}, call_id=call_id, error="malformed argument JSON")
+                # unreadable arguments — an argument failure, not a routing one. Still a failure:
+                # a real client would choke on it too. But name the shape, because "the model
+                # emits the object twice" (Llama 3.1 8B via OpenRouter, 18/40 trials) is a
+                # different finding from "the model can't write JSON".
+                why = _classify_bad_json(tc.function.arguments)
+                print(f"WARNING: model returned {why}: {tc.function.arguments!r}", file=sys.stderr)
+                call = ToolCall(tool_name=tc.function.name, arguments={}, call_id=call_id, error=why)
             calls.append(call)
             messages.append({"role": "tool", "tool_call_id": call_id, "content": _result_text(result_for, call)})
     return calls

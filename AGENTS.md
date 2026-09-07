@@ -178,7 +178,7 @@ the directory where the user wants them. The report is stdout; warnings and prog
    combinations the server doesn't (e.g. `head` and `tail` together).
 5. **Argument Failures** — trials that reached the right tool with the wrong arguments, per
    parameter: `missing` (expected, not sent), `extra` (sent, not expected), `wrong` (value differs
-   after canonicalisation), `* unparseable` (argument JSON could not be parsed). On strong models
+   after canonicalisation), `* malformed/duplicated argument JSON`. On strong models
    this is where most remaining failures are; it names the field to document.
 6. **No-Call Replies** — for each failed trial where the model called nothing, what it said
    instead (clipped), tagged `asked` / `refused` / `other`. A question means the task or description left something unstated; a
