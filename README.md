@@ -123,8 +123,10 @@ you need to know before rewriting anything.
 
 Twelve rewrites were proposed for the filesystem server. Five improved the number (`8→10`,
 `6→8`); none were accepted, because one Bonferroni correction across twelve proposals at n=10
-sets α=0.004 and the report says so. Run `--fix-tool list_directory --fix-tool move_file
---seeds 20` on the tools the matrix names, not `--fix` on the whole catalog at once.
+sets α=0.004 and the report says so. Run `--only list_directory --only move_file --fix-tool
+list_directory --fix-tool move_file --seeds 20` on the tools the matrix names, not `--fix` on the
+whole catalog at once. `--only` generates tasks just for those tools while still offering the
+model the whole catalog, so the re-measure costs minutes instead of the full run.
 
 ## Two commands, two budgets
 

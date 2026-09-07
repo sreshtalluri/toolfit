@@ -157,6 +157,11 @@ def render_confusion_matrix(matrix: ConfusionMatrix) -> str:
         f"- Seeds per tool: {matrix.seeds}",
         f"- Max steps per task: {matrix.max_steps}",
     ]
+    if matrix.only:
+        lines.append(
+            f"- Tools evaluated (--only): {', '.join(matrix.only)} — the model was offered the whole "
+            f"catalog ({len(matrix.descriptions)} tools) on every call"
+        )
 
     return "\n".join(lines)
 

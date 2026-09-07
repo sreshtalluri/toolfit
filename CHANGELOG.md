@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- `--only NAME` (repeatable): generate tasks only for the named tools while still offering the
+  model the whole catalog. This is the iterate loop the fix flow was missing — re-measuring one
+  description on a 12-tool server at 20 seeds drops from ~40 min to ~4. Tools named in
+  `--mutate`/`--fix-tool` must be in `--only`; the CLI exits 1 before any call otherwise. The
+  report's Metadata says which tools were evaluated.
+- Solvability warnings now carry the trial's outcome (`seed 4, failed` / `seed 2, passed anyway`),
+  so a reader can tell whether a tool's failures sit on tasks the sampler couldn't express (e.g.
+  `head` and `tail` together) or on solvable ones. Unsolvable tasks are still graded on purpose:
+  on a catalog with duplicate tools the ambiguity is the finding.
+
 ## 0.2.0 (2026-09-05)
 
 **Pass rates change meaning — and go up on servers with precondition tools.** Trials are now

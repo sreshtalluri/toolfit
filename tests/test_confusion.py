@@ -176,3 +176,33 @@ def test_build_confusion_matrix_excludes_a_broken_tool_from_trials_by_tool_too()
     matrix = build_confusion_matrix(catalog, _AlwaysToolAAdapter(), _fake_generator_client(), seeds=2)
     assert "tool_a" in matrix.trials_by_tool
     assert "tool_broken" not in matrix.trials_by_tool
+
+
+def test_build_confusion_matrix_only_restricts_tasks_but_offers_the_whole_catalog():
+    seen: list[int] = []
+
+    class _CountingAdapter:
+        def call_with_tools(self, *, task_text, tools):
+            seen.append(len(tools))
+            return ToolCall(tool_name="tool_a", arguments={"title": "x"})
+
+    matrix = build_confusion_matrix(CATALOG, _CountingAdapter(), _fake_generator_client(), seeds=2, only={"tool_b"})
+    assert set(matrix.trials_per_tool) == {"tool_b"}  # tool_a got no tasks...
+    assert seen == [2, 2]  # ...but was offered on every call, so it can still steal tool_b's tasks
+    assert matrix.counts["tool_b"]["tool_a"] == 2
+    assert matrix.only == ["tool_b"]
+
+
+def test_build_confusion_matrix_tags_unsolvable_tasks_with_their_outcome():
+    def create(**kwargs):
+        prompt = kwargs["messages"][0]["content"]
+        text = "AMBIGUOUS: two tools fit" if "SOLVABLE" in prompt and "AMBIGUOUS" in prompt else "Write a Q3 report"
+        return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text=text)])
+
+    client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    matrix = build_confusion_matrix(CATALOG, _AlwaysToolAAdapter(), client, seeds=1)
+    # tool_a's task passed (the adapter always calls tool_a with the right title), tool_b's failed.
+    assert matrix.solvability_warnings == [
+        "tool_a (seed 1, passed anyway): two tools fit",
+        "tool_b (seed 1, failed): two tools fit",
+    ]

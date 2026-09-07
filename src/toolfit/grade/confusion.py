@@ -67,6 +67,7 @@ class ConfusionMatrix:
     generator_model: str = ""
     seeds: int = 0
     max_steps: int = 1
+    only: list[str] = field(default_factory=list)  # --only: tools that got tasks; [] = whole catalog
 
     def record(self, *, intended_tool: str, actual_tool: str) -> None:
         row = self.counts.setdefault(intended_tool, {})
@@ -97,17 +98,23 @@ def build_confusion_matrix(
     *,
     seeds: int = 5,
     max_steps: int = 1,
+    only: set[str] | None = None,
 ) -> ConfusionMatrix:
+    """`only` restricts which tools get tasks generated; the model is still offered the WHOLE
+    catalog on every call, so a one-tool run measures that tool against all its neighbours."""
     matrix = ConfusionMatrix()
     matrix.model = getattr(adapter, "model", "unknown")
     matrix.generator_model = GENERATOR_MODEL
     matrix.seeds = seeds
     matrix.max_steps = max_steps
+    matrix.only = sorted(only) if only is not None else []
     catalog_names = catalog.names()
     catalog_descriptions = {t.name: (t.description or "") for t in catalog.tools}
     matrix.descriptions = catalog_descriptions
 
     for tool in catalog.tools:
+        if only is not None and tool.name not in only:
+            continue
         sampled_args: list[dict] = []
         # Buffer this tool's (intended, actual) pairs and only commit them to matrix.counts —
         # atomically, with trials_per_tool/distinct_trials — once every seed for this tool has
@@ -133,8 +140,6 @@ def build_confusion_matrix(
                     matrix.leakage_warnings.append(f"{tool.name} (seed {seed}): {task.text!r}")
 
                 solvability = check_solvability(generator_client, task, catalog_descriptions=catalog_descriptions)
-                if not solvability.solvable:
-                    matrix.solvability_warnings.append(f"{tool.name} (seed {seed}): {solvability.reasoning}")
 
                 calls = run_steps(
                     adapter,
@@ -144,6 +149,15 @@ def build_confusion_matrix(
                     result_for=synthetic_result(catalog, seed=seed),
                 )
                 result = grade_sequence(task, calls, catalog_tool_names=catalog_names)
+                if not solvability.solvable:
+                    # Unsolvable tasks are still graded: on a catalog with duplicate tools the
+                    # ambiguity IS the finding, so excluding them would hide real confusion. The
+                    # outcome tag lets a reader see whether a tool's failures sit on these seeds
+                    # (sampler's fault, e.g. head+tail) or on solvable ones (the description's).
+                    outcome = "passed anyway" if result.passed else "failed"
+                    matrix.solvability_warnings.append(
+                        f"{tool.name} (seed {seed}, {outcome}): {solvability.reasoning}"
+                    )
                 # The matrix stays intended × FIRST call so it is comparable with single-step
                 # runs; the precondition edges below are what explain an off-diagonal first call.
                 if result.no_call:

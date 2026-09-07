@@ -185,7 +185,7 @@ def test_eval_mutate_skips_a_tool_excluded_by_a_schema_warning(monkeypatch):
 
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
-    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1: matrix)
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1, only=None: matrix)
 
     result = runner.invoke(app, ["eval", "somepath", "--mutate", "tool_b:new description"])
 
@@ -235,7 +235,7 @@ def test_eval_mutate_applies_bonferroni_correction_across_multiple_mutations(mon
 
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
-    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1: matrix)
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1, only=None: matrix)
     monkeypatch.setattr(cli, "run_mutation_trials", fake_run_mutation_trials)
 
     result = runner.invoke(
@@ -314,7 +314,7 @@ def test_eval_badge_writes_an_svg_file(monkeypatch, tmp_path, capsys):
 
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
-    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1: matrix)
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1, only=None: matrix)
 
     result = runner.invoke(app, ["eval", "somepath", "--badge"])
 
@@ -350,7 +350,7 @@ def test_eval_fix_reports_verdicts_writes_json_and_feeds_the_badge(monkeypatch, 
 
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
-    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1: matrix)
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1, only=None: matrix)
     monkeypatch.setattr(cli, "run_fix_loop", lambda m, c, a, g, only=None, max_steps=1: [FixVerdict(proposal, trial)])
 
     result = runner.invoke(app, ["eval", "somepath", "--fix", "--badge", "--seeds", "2"])
@@ -405,7 +405,7 @@ def test_eval_badge_mutate_and_strict_together_still_writes_the_badge_before_exi
 
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
-    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1: matrix)
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1, only=None: matrix)
     monkeypatch.setattr(
         cli, "run_mutation_trials", lambda matrix, catalog, adapter, *, tool_name, new_description, max_steps=1: mutation_result
     )
@@ -474,7 +474,7 @@ def test_eval_strict_exits_one_when_a_tools_pass_rate_is_below_threshold(monkeyp
 
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
-    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1: matrix)
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1, only=None: matrix)
 
     result = runner.invoke(app, ["eval", "somepath", "--strict"])
 
@@ -506,7 +506,7 @@ def test_eval_strict_exits_zero_when_every_tools_pass_rate_meets_the_threshold(m
 
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
-    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1: matrix)
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1, only=None: matrix)
 
     result = runner.invoke(app, ["eval", "somepath", "--strict"])
 
@@ -548,7 +548,7 @@ def test_eval_strict_warns_about_tools_excluded_by_schema_warnings(monkeypatch):
 
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
-    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1: matrix)
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1, only=None: matrix)
 
     result = runner.invoke(app, ["eval", "somepath", "--strict"])
 
@@ -580,8 +580,36 @@ def test_eval_without_strict_exits_zero_regardless_of_pass_rate(monkeypatch):
 
     monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
     monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
-    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1: matrix)
+    monkeypatch.setattr(cli, "build_confusion_matrix", lambda catalog, adapter, generator_client, seeds, max_steps=1, only=None: matrix)
 
     result = runner.invoke(app, ["eval", "somepath"])
 
     assert result.exit_code == 0
+
+
+def test_eval_only_rejects_an_unknown_tool_name(monkeypatch):
+    async def fake_fetch_catalog(params):
+        return ToolCatalog(tools=[Tool(name="tool_a", description="Does A.", inputSchema=_SIMPLE_SCHEMA)])
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+    monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
+    result = runner.invoke(app, ["eval", "somepath", "--only", "typo_name"])
+    assert result.exit_code == 1
+    assert "--only references unknown tool 'typo_name'" in result.output
+
+
+def test_eval_only_must_cover_every_mutated_or_fixed_tool(monkeypatch):
+    async def fake_fetch_catalog(params):
+        return ToolCatalog(
+            tools=[
+                Tool(name="tool_a", description="Does A.", inputSchema=_SIMPLE_SCHEMA),
+                Tool(name="tool_b", description="Does B.", inputSchema=_SIMPLE_SCHEMA),
+            ]
+        )
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+    monkeypatch.setattr(cli, "fetch_catalog", fake_fetch_catalog)
+    monkeypatch.setattr(cli, "build_adapter", lambda model: SimpleNamespace(model=model))
+    result = runner.invoke(app, ["eval", "somepath", "--only", "tool_a", "--mutate", "tool_b:new text"])
+    assert result.exit_code == 1
+    assert "'tool_b' is named in --mutate/--fix-tool but not in --only" in result.output

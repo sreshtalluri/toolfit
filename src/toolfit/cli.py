@@ -48,6 +48,13 @@ def eval(
         "the intended tool is called correctly at any step. 1 = single-call grading (0.1.x behaviour).",
     ),
     model: str = typer.Option("claude-sonnet-5", help="Model under test."),
+    only: list[str] = typer.Option(
+        [],
+        "--only",
+        help="Generate tasks only for these tools (repeatable). The model still sees the whole "
+        "catalog, so this measures one tool against all its neighbours at a fraction of the cost — "
+        "use it when iterating on a single description with --mutate or --fix-tool.",
+    ),
     mutate: list[str] = typer.Option(
         [],
         "--mutate",
@@ -91,6 +98,7 @@ def eval(
             seeds=seeds,
             max_steps=max_steps,
             model=model,
+            only=set(only) if only else None,
             mutate=mutate,
             fix=fix or bool(fix_tool),
             fix_tool=set(fix_tool),
@@ -182,6 +190,7 @@ async def _run_eval(
     seeds: int,
     max_steps: int,
     model: str,
+    only: set[str] | None,
     mutate: list[str],
     fix: bool,
     fix_tool: set[str],
@@ -251,9 +260,25 @@ async def _run_eval(
             )
             raise typer.Exit(code=1)
 
+    if only is not None:
+        for tool_name in sorted(only):
+            if tool_name not in catalog.names():
+                typer.echo(
+                    f"--only references unknown tool {tool_name!r} (catalog has: {', '.join(catalog.names())})",
+                    err=True,
+                )
+                raise typer.Exit(code=1)
+        # A mutation or fix re-measures the base eval's own tasks, so a tool outside --only has
+        # nothing to re-measure. Say so before spending any money, not after the matrix.
+        for tool_name in sorted((fix_tool | {t for t, _ in parsed_mutations}) - only):
+            typer.echo(f"{tool_name!r} is named in --mutate/--fix-tool but not in --only; add --only {tool_name}", err=True)
+            raise typer.Exit(code=1)
+
     generator_client = anthropic.Anthropic()
     try:
-        matrix = build_confusion_matrix(catalog, adapter, generator_client, seeds=seeds, max_steps=max_steps)
+        matrix = build_confusion_matrix(
+            catalog, adapter, generator_client, seeds=seeds, max_steps=max_steps, only=only
+        )
     except (anthropic.APIError, openai.APIError) as e:
         # Non-transient provider errors (400 invalid tool name, 401, exhausted retries) surface as a
         # named CLI error, not a traceback. Nothing is printed for the partial run on purpose: a
