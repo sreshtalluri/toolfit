@@ -168,7 +168,11 @@ up. Precondition findings are about *state* (stage before commit), not id lookup
 **With a model that actually gets confused.** Llama 3.1 8B via OpenRouter on the toy server:
 64%, `count_tasks` 0/10, 6 malformed tool-call payloads in 50 tasks. That run is why ambiguous
 tasks are now regenerated, why unparseable arguments count as an argument failure on the named
-tool rather than a no-call, and why fixer proposals are capped at 25 words.
+tool rather than a no-call, and why fixer proposals are capped at 25 words. With those in, the
+fixer's rewrite of `create_task` helped every time it was measured (5/10 → 8/10, then 14/20 →
+17/20 alone at 20 seeds) and was still rejected: p=0.23. A 15-point effect needs about 40 paired
+trials to clear 0.05, and toolfit says so rather than round up
+([`docs/examples/toy-server-llama/`](docs/examples/toy-server-llama/)).
 
 ## Two commands, two budgets
 

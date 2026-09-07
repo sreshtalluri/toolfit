@@ -5,15 +5,17 @@ evidence would promote it; nothing is built on speculation.
 
 ## eval
 
-- **Accepted fix on a real server (pass-rate axis).** Every `--fix` run so far rejected every
-  proposal — correctly, because Sonnet 5 rarely fails for description reasons. The closed loop is
-  now shown on the *precondition* axis (`docs/examples/mcp-server-git-precondition/`: 13/20 → 19/20
-  and 13/20 → 0/20 with p-values), but no run has yet produced an ACCEPTED pass-rate verdict with
-  real numbers. Needs a weaker model (below). **Priority:** P1
-- **Non-Anthropic model under test on the corpus.** `OPENROUTER_API_KEY` was empty during every
-  scenario run. A 7B model is far likelier to confuse the toy pairs and give `--fix` something to
-  accept; it is also the only way to get evidence for the `(error)` column below. **Priority:** P1,
-  blocked on a key.
+- **Accepted fix on the pass-rate axis.** Still none, and now for a measured reason rather than
+  a missing model. With Llama 3.1 8B the fixer's rewrite of `create_task` helped every time
+  (5/10 → 8/10; then 14/20 → 17/20 alone at 20 seeds, p=0.23 vs α=0.05,
+  `docs/examples/toy-server-llama/report-create_task-20seeds.md`) but a +15-point effect needs
+  roughly 40+ paired trials to clear 0.05. Two things would change this: (a) `--seeds 40` on one
+  tool is now cheap with `--only` (~2 min on Llama) — try it; (b) `create_task` sampled only
+  9/20 distinct argument sets, so half the trials are correlated repeats. The sampler's free-text
+  pool is too small; widen it before spending on more seeds. **Priority:** P1
+- **Non-Anthropic model under test.** Done 2026-09-06 (Llama 3.1 8B via OpenRouter, toy server,
+  `docs/examples/toy-server-llama/`). Next: the same model on `examples/ops_server.py` at 49
+  tools — expect malformed-JSON and argument failures to dominate. **Priority:** P2
 - **Concurrency across tools (design doc Eng Req #1).** Everything is sequential; a 12-tool server
   at 10 seeds × 3 steps is ~20 min. `--only` covers the iterate loop, so this matters mainly for
   first runs and the Action. A `ThreadPoolExecutor` over tools in `build_confusion_matrix` with

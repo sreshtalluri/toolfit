@@ -16,6 +16,11 @@ First run with a model that actually gets confused (Llama 3.1 8B via OpenRouter,
   failure — 6 of 50 Llama calls did this and read as the model ignoring the tool.
 - **Fixer proposals are capped at 25 words.** Two of four rewrites made Llama worse (4→3, 9→7);
   both were long parameter enumerations.
+- Same run again on this code (`docs/examples/toy-server-llama/`): solvability warnings 31 → 5
+  (all on the identical-description pair, after 2 regenerations), no proposal made things worse,
+  `create_task` 5/10 → 8/10 on its proposal (rejected only because five proposals share one
+  correction at n=10). `count_tasks` stayed 0/10 even under "Return the number of tasks…", which
+  settles it as model weakness rather than description — the honest verdict is "no net change".
 - New example: `examples/ops_server.py`, 49 tools across users/tickets/deployments/alerts/
   on-call/docs/flags/config, with planted static and behavioural problems (docstring lists
   them; scan findings pinned by test). Sonnet 5 baseline in `docs/examples/ops-server/`: 84%,
