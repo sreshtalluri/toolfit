@@ -174,6 +174,17 @@ fixer's rewrite of `create_task` helped every time it was measured (5/10 → 8/1
 trials to clear 0.05, and toolfit says so rather than round up
 ([`docs/examples/toy-server-llama/`](docs/examples/toy-server-llama/)).
 
+**Across ten models, not one.** [`docs/models.md`](docs/models.md) runs the same command over 10
+models — 70B/32B/24B open weights through commercial small/mini tiers — on three servers, 10 seeds
+each. Zero malformed/duplicated-JSON trials across the 21 completed combinations: every model here
+forms JSON fine, so what's left is almost entirely which-tool and which-argument. The toy server's
+`count_tasks`/`list_tasks` pair (identical descriptions) fails 0/10 on *every single model tested*,
+best and worst alike — the cleanest evidence that a description gap doesn't shrink with model
+strength. The report now says this directly: a **Failure Attribution** section splits every
+failure into four buckets (description confusion, fixable arguments, model-mechanics no
+description can move, and correct deprecated-tool avoidance), plus a **Mechanics Floor** baseline,
+so you know before rewriting anything whether the catalog can actually fix what's failing.
+
 ## Two commands, two budgets
 
 | | `scan` | `eval` |

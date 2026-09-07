@@ -1,7 +1,7 @@
 # toolfit — operating manual for agents
 
 You are installing or running `toolfit` on behalf of a user. Everything below was verified on
-2026-09-05 against the published `toolfit==0.1.0` in a fresh Python 3.12 venv. Follow it in order;
+2026-09-07 against the published `toolfit==0.2.1` in a fresh Python 3.12 venv. Follow it in order;
 each step names the exact command, what success looks like, and what a failure means.
 
 ## 0. What it is, in one breath
@@ -64,7 +64,7 @@ Rules and what they mean:
 | `missing_description` | description empty | the model has only the name to go on |
 | `short_description` | under 15 characters | "Find contacts." says nothing about *how* |
 | `duplicate_description` | two+ tools share the same text (case/space-insensitive) | the classic copy-paste bug; models pick by coin flip |
-| `deprecated_tool` | the description calls *itself* deprecated | models obey it and score 0; drop the tool from the catalog |
+| `deprecated_tool` | the description calls *itself* deprecated | models obey it and route away; `eval` excludes those trials from the failure count (§4, item 0) — drop the tool from the catalog instead of chasing a "fix" |
 
 Expect few findings on mature servers (1 across 166 tools on 15 public ones — `docs/corpus.md`).
 That is the tool working, not failing: the copy-paste class is rare in shipped code. The real
@@ -147,6 +147,16 @@ the directory where the user wants them. The report is stdout; warnings and prog
 
 ### Reading the report, section by section
 
+0. **Failure Attribution / Mechanics Floor** — printed before the Confusion Matrix. Every failed
+   trial is bucketed: `description confusion` (a different real catalog tool was called — the
+   classic target, fixable by rewriting a description), `author-clarifiable arguments` (right
+   tool, wrong args, or a no-call that asked/refused — also description-fixable), `model output
+   mechanics` (hallucinated tool name, malformed/duplicated argument JSON, garbled no-call — a
+   property of the model, **no description edit can move it**), and `correct deprecated-tool
+   avoidance` (the model routed away from a tool `scan`'s `deprecated_tool` rule flagged —
+   excluded from the failure count entirely, since that's the catalog working as intended). The
+   Mechanics Floor line right below is the mechanics bucket's raw count — check it first, before
+   proposing any description rewrite, so you don't chase a failure the catalog can't fix.
 1. **Confusion Matrix** — rows are the tool a task was written for, columns what the model called
    **first**, plus `(no call)`, `(hallucinated)` and `(error)`. `(error)` is the provider's fault
    (truncated before any call, empty response), not the catalog's; a model that picked the right
@@ -189,7 +199,7 @@ the directory where the user wants them. The report is stdout; warnings and prog
    `$ref`/`allOf` (pydantic nested models); what still excludes a tool is a `pattern` regex, a
    remote `$ref`, or a missing `items` on an array. Tell the user which tool and why — it's in
    the warning text.
-6. **Mutation Results / Proposed Fixes** — per tool: before → after pass counts, exact one-sided
+8. **Mutation Results / Proposed Fixes** — per tool: before → after pass counts, exact one-sided
    McNemar p-value, and a verdict. `ACCEPTED` requires significance after correction **and** a
    higher pass count. Rejections are printed with the reason: `made things worse`, `no net change`,
    `improvement not significant after correction (p=… vs corrected α=…)`, or rejected before

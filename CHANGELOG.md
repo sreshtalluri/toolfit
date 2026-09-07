@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 (2026-09-07)
 
 - **Failure Attribution** section, new at the top of the eval report: splits total failure mass
   into four buckets validated against real trial data — description confusion (off-diagonal
@@ -17,6 +17,11 @@
 - `--workers N` (default 4): tools are evaluated concurrently; each tool's own calls stay
   sequential and outcomes are committed in catalog order, so the report is unchanged for a given
   set of answers. Design doc Eng Req #1, finally.
+- **Multi-model sweep** (`docs/models.md`): 10 models across `toy_server.py`/`crm_server.py`/
+  `ops_server.py` at 10 seeds. Confirms the pass-rate ceiling isn't JSON formation on any of these
+  models (zero malformed/duplicated-JSON trials across 21 completed combinations) — failures are
+  almost entirely wrong-tool-called or wrong-argument. `toy_server`'s `count_tasks`/`list_tasks`
+  pair (identical descriptions) fails 0/10 on every model tested, independent of model strength.
 - **Argument Failures** section: per-parameter `missing` / `extra` / `wrong` / `* malformed/duplicated argument JSON`
   counts for trials that reached the right tool. Structural, no model opinion. This is the answer
   to "strong models don't fail for description reasons, so what do they fail on": the field.
@@ -29,8 +34,6 @@
   cannot fix a model that emits its arguments twice.
 - Sampler example pools widened (12 titles, 8 notes, 6 ids): `create_task` could only produce
   nine distinct argument sets, so seeds past nine were correlated repeats (9/20 distinct measured).
-
-## 0.2.1 (2026-09-07)
 
 First run with a model that actually gets confused (Llama 3.1 8B via OpenRouter, toy server,
 64%) changed three things:
