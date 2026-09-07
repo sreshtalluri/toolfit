@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 (2026-09-07)
 
 First run with a model that actually gets confused (Llama 3.1 8B via OpenRouter, toy server,
 64%) changed three things:
