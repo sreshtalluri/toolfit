@@ -142,6 +142,17 @@ def render_confusion_matrix(matrix: ConfusionMatrix) -> str:
             lines.append("")
             lines += [f"- {u}" for u in undeclared]
 
+    no_call_lines = []
+    for tool in tools:
+        for seed, trial in enumerate(matrix.trials_by_tool.get(tool, []), start=1):
+            replies = [c.text for c in trial.calls if c.tool_name is None and c.text]
+            if replies and not trial.passed:
+                no_call_lines.append(f"- {tool} (seed {seed}): {replies[0]}")
+    if no_call_lines:
+        # What the model said instead of calling: a question means the task or description left
+        # something unstated; a refusal means the description reads as unsafe or the tool is
+        # marked deprecated. Neither is a routing problem, and both are things an author can act on.
+        lines += ["", "## No-Call Replies", ""] + no_call_lines
     if matrix.leakage_warnings:
         lines += ["", "## Leakage Warnings"] + [f"- {w}" for w in matrix.leakage_warnings]
     if matrix.solvability_warnings:

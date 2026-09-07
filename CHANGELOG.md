@@ -18,7 +18,11 @@ First run with a model that actually gets confused (Llama 3.1 8B via OpenRouter,
   both were long parameter enumerations.
 - New example: `examples/ops_server.py`, 49 tools across users/tickets/deployments/alerts/
   on-call/docs/flags/config, with planted static and behavioural problems (docstring lists
-  them; scan findings pinned by test).
+  them; scan findings pinned by test). Sonnet 5 baseline in `docs/examples/ops-server/`: 84%,
+  48 min, no exclusions.
+- **No-Call Replies section.** 20 of the 38 ops failures were `(no call)` and the report could
+  not say why. Adapters now keep the model's reply text on a no-call and the report lists it
+  per failed trial.
 
 - `--only NAME` (repeatable): generate tasks only for the named tools while still offering the
   model the whole catalog. This is the iterate loop the fix flow was missing — measured on

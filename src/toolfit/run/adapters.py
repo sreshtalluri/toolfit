@@ -69,6 +69,9 @@ class ToolCall:
     # unparseable argument JSON). With a tool_name it means "right tool, arguments unreadable";
     # with tool_name=None it lands in the report's (error) column instead of (no call).
     error: str | None = None
+    # On a genuine no-call, the model's reply text (truncated): the report shows it so an author
+    # can see whether the model asked a question, refused, or said the task was impossible.
+    text: str = ""
 
 
 ResultFor = Callable[[ToolCall], dict]
@@ -87,10 +90,15 @@ def run_steps(
     run = getattr(adapter, "run", None)
     if run is None or max_steps <= 1:
         call = adapter.call_with_tools(task_text=task_text, tools=tools)
-        # A bare no-call is dropped; an error call (truncated/empty/malformed) is kept so the
-        # matrix can tally it under (error) rather than (no call).
-        return [call] if call.tool_name is not None or call.error else []
+        # A bare no-call is dropped; an error call (truncated/empty/malformed) or a no-call with
+        # reply text is kept so the report can tally (error) or show what the model said.
+        return [call] if call.tool_name is not None or call.error or call.text else []
     return run(task_text=task_text, tools=tools, max_steps=max_steps, result_for=result_for)
+
+
+def _clip(text: str, limit: int = 240) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 def _result_text(result_for: ResultFor, call: ToolCall) -> str:
@@ -149,6 +157,9 @@ class AnthropicAdapter:
                     # than (no call) so a flaky provider doesn't read as a confusing catalog.
                     print("WARNING: response truncated at max_tokens before a tool_use block was found", file=sys.stderr)
                     calls.append(ToolCall(tool_name=None, arguments={}, error="truncated at max_tokens"))
+                elif not calls:
+                    text = " ".join(getattr(b, "text", "") for b in response.content if getattr(b, "type", "") == "text")
+                    calls.append(ToolCall(tool_name=None, arguments={}, text=_clip(text)))
                 break
             # Blocks go back verbatim (thinking blocks carry signatures the API checks).
             messages.append({"role": "assistant", "content": [_block_dict(b) for b in response.content]})
@@ -185,6 +196,8 @@ def _openai_compatible_run(
             if getattr(response.choices[0], "finish_reason", None) == "length":
                 print("WARNING: response truncated (finish_reason=length) before any tool call", file=sys.stderr)
                 calls.append(ToolCall(tool_name=None, arguments={}, error="truncated (finish_reason=length)"))
+            elif not calls:
+                calls.append(ToolCall(tool_name=None, arguments={}, text=_clip(getattr(message, "content", None) or "")))
             break
         messages.append(
             {

@@ -52,7 +52,7 @@ def test_call_with_tools_returns_none_when_model_makes_no_tool_call():
     )
     adapter = AnthropicAdapter(_FakeAnthropicClient(fake_response))
     result = adapter.call_with_tools(task_text="hello", tools=TOOLS)
-    assert result == ToolCall(tool_name=None, arguments={})
+    assert result == ToolCall(tool_name=None, arguments={}, text="Sure, I can help.")
 
 
 def test_call_with_tools_warns_on_truncation_before_a_tool_use_block(capsys):
@@ -424,3 +424,33 @@ def test_openai_compatible_plain_text_reply_is_a_genuine_no_call_without_error()
     adapter = OpenAIAdapter(_FakeOpenAIClient(fake_response), model="gpt-5.5")
     result = adapter.call_with_tools(task_text="hello", tools=TOOLS)
     assert result.tool_name is None and result.error is None
+
+
+def test_anthropic_no_call_keeps_the_reply_text():
+    fake_response = SimpleNamespace(
+        content=[SimpleNamespace(type="text", text="Which   environment do you mean?")], stop_reason="end_turn"
+    )
+    adapter = AnthropicAdapter(_FakeAnthropicClient(fake_response))
+    result = adapter.call_with_tools(task_text="restart it", tools=TOOLS)
+    assert result.tool_name is None and result.error is None
+    assert result.text == "Which environment do you mean?"
+
+
+def test_openai_compatible_no_call_keeps_the_reply_text():
+    message = _FakeOpenAIMessage(tool_calls=None)
+    message.content = "I can't read secrets without audit logging."
+    fake_response = _FakeOpenAIResponse(choices=[_FakeOpenAIChoice(message)])
+    adapter = OpenAIAdapter(_FakeOpenAIClient(fake_response), model="gpt-5.5")
+    result = adapter.call_with_tools(task_text="read the secret", tools=TOOLS)
+    assert result.text == "I can't read secrets without audit logging."
+
+
+def test_run_steps_keeps_a_no_call_that_carries_reply_text():
+    from toolfit.run.adapters import run_steps
+
+    class _Asks:
+        def call_with_tools(self, *, task_text, tools):
+            return ToolCall(tool_name=None, arguments={}, text="Which one?")
+
+    calls = run_steps(_Asks(), task_text="x", tools=TOOLS, max_steps=1, result_for=lambda _: {})
+    assert [c.text for c in calls] == ["Which one?"]

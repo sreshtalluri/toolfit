@@ -154,6 +154,22 @@ list_directory --fix-tool move_file --seeds 20` on the tools the matrix names, n
 whole catalog at once. `--only` generates tasks just for those tools while still offering the
 model the whole catalog, so the re-measure costs minutes instead of the full run.
 
+**At the size teams actually ship.** `examples/ops_server.py` is 49 tools across users, tickets,
+deployments, alerts, on-call, docs, flags and config, with planted problems listed in its
+docstring. Sonnet 5, 5 seeds, 48 min ([`docs/examples/ops-server/`](docs/examples/ops-server/)):
+**84%**, no tool excluded. The declared precondition (`promote_release` says to run
+`validate_release` first) was observed 5/5 and correctly not flagged. The near-neighbour pairs
+mostly did not confuse Sonnet; what failed was arguments (`create_flag` 2/5 with every call
+routed right) and no-calls (`snooze_alert` 4/5 replied with a question instead), so the report
+now prints what the model said in a **No-Call Replies** section. The id-lookup preconditions
+planted there never fired: generated tasks carry the id, so the model has no reason to look it
+up. Precondition findings are about *state* (stage before commit), not id lookups.
+
+**With a model that actually gets confused.** Llama 3.1 8B via OpenRouter on the toy server:
+64%, `count_tasks` 0/10, 6 malformed tool-call payloads in 50 tasks. That run is why ambiguous
+tasks are now regenerated, why unparseable arguments count as an argument failure on the named
+tool rather than a no-call, and why fixer proposals are capped at 25 words.
+
 ## Two commands, two budgets
 
 | | `scan` | `eval` |

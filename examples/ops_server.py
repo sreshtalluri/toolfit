@@ -19,6 +19,13 @@ Behavioural (only eval can find these):
     list_deployments returns; page_oncall needs a schedule id from get_oncall_schedule;
     acknowledge_alert needs an alert id from list_alerts
   - one DECLARED precondition for contrast: promote_release says to run validate_release first
+
+What the first Sonnet 5 baseline showed (docs/examples/ops-server/, 5 seeds, 84%): the declared
+precondition was observed 5/5 and correctly not flagged. The three id-lookup plants did NOT fire:
+generated tasks carry the sampled id in the text, so the model has no reason to look it up.
+Precondition findings detect STATE dependencies (stage before commit), not id lookups. The real
+failures were argument-level (create_flag 2/5 with all five calls routed right) and no-calls
+(snooze_alert 4/5 asked a question instead), not near-neighbour confusion.
 """
 
 import sys

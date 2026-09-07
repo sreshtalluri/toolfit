@@ -175,7 +175,10 @@ the directory where the user wants them. The report is stdout; warnings and prog
    never silently dropped. Many solvability warnings
    on one tool usually mean the *catalog* is ambiguous (that's the finding) or the schema allows
    combinations the server doesn't (e.g. `head` and `tail` together).
-5. **Schema Warnings** — tools excluded because the sampler couldn't produce arguments. They are
+5. **No-Call Replies** — for each failed trial where the model called nothing, what it said
+   instead (clipped). A question means the task or description left something unstated; a
+   refusal usually means the tool reads as unsafe or is marked deprecated. Neither is routing.
+6. **Schema Warnings** — tools excluded because the sampler couldn't produce arguments. They are
    **not** in any number above and don't trip `--strict`; `--strict` prints them on stderr. The
    sampler handles enums, formats, nullables, nested objects, arrays, numeric bounds, and local
    `$ref`/`allOf` (pydantic nested models); what still excludes a tool is a `pattern` regex, a

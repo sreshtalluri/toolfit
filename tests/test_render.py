@@ -289,3 +289,26 @@ def test_render_lint_report_groups_findings_by_rule():
     assert "## missing_description" in report
     assert "tool_a has no description" in report
     assert "tool_b, tool_c share the identical description" in report
+
+
+def test_render_lists_no_call_replies_for_failed_trials_only():
+    from toolfit.gen.taskgen import GeneratedTask
+    from toolfit.grade.confusion import NO_CALL, TrialRecord
+    from toolfit.run.adapters import ToolCall
+
+    matrix = ConfusionMatrix()
+    matrix.record(intended_tool="snooze_alert", actual_tool=NO_CALL)
+    matrix.record(intended_tool="snooze_alert", actual_tool="snooze_alert")
+    matrix.trials_per_tool = {"snooze_alert": 2}
+    matrix.distinct_trials = {"snooze_alert": 2}
+    task = GeneratedTask(text="snooze it", tool_name="snooze_alert", arguments={})
+    matrix.trials_by_tool = {
+        "snooze_alert": [
+            TrialRecord(task=task, passed=False, calls=[ToolCall(None, {}, text="Which alert should I snooze?")]),
+            TrialRecord(task=task, passed=True, calls=[ToolCall("snooze_alert", {})]),
+        ]
+    }
+    report = render_confusion_matrix(matrix)
+    assert "## No-Call Replies" in report
+    assert "- snooze_alert (seed 1): Which alert should I snooze?" in report
+    assert "(seed 2)" not in report
