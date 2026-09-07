@@ -88,3 +88,17 @@ def test_grade_treats_sampled_none_and_omitted_key_as_equal():
     call = ToolCall(tool_name="create_reminder", arguments={"task_id": "t1"})
     result = grade(task, call, catalog_tool_names=["create_reminder"])
     assert result.passed
+
+
+def test_arg_diff_names_missing_wrong_and_extra_parameters():
+    from toolfit.grade.grader import diff_args, grade_sequence
+
+    assert diff_args({"a": 1, "b": 2}, {"a": 1, "b": 3, "c": 4}) == {"b": "wrong", "c": "extra"}
+    assert diff_args({"a": 1}, {}) == {"a": "missing"}
+    task = GeneratedTask(text="...", tool_name="create_task", arguments={"title": "Renew passport", "priority": "low"})
+    r = grade_sequence(task, [ToolCall("create_task", {"title": "Renew passport"})], catalog_tool_names=["create_task"])
+    assert r.correct_tool and not r.correct_args and r.arg_diff == {"priority": "missing"}
+    r = grade_sequence(task, [ToolCall("create_task", {}, error="malformed argument JSON")], catalog_tool_names=["create_task"])
+    assert r.arg_diff == {"*": "malformed argument JSON"}
+    ok = grade_sequence(task, [ToolCall("create_task", {"title": "renew passport", "priority": "LOW"})], catalog_tool_names=["create_task"])
+    assert ok.passed and ok.arg_diff == {}

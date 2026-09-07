@@ -6,12 +6,12 @@ from types import SimpleNamespace
 from mcp.types import Tool
 
 from toolfit.connect.client import ToolCatalog
-from toolfit.grade.confusion import HALLUCINATED, NO_CALL, build_confusion_matrix
+from toolfit.grade.confusion import ERROR, HALLUCINATED, MAX_TASK_REGENERATIONS, NO_CALL, build_confusion_matrix
 from toolfit.run.adapters import ToolCall
 
 _SIMPLE_SCHEMA = {
     "type": "object",
-    "properties": {"title": {"type": "string"}},
+    "properties": {"title": {"type": "string", "enum": ["Write Q3 report"]}},  # pinned so fakes can match
     "required": ["title"],
 }
 
@@ -176,3 +176,124 @@ def test_build_confusion_matrix_excludes_a_broken_tool_from_trials_by_tool_too()
     matrix = build_confusion_matrix(catalog, _AlwaysToolAAdapter(), _fake_generator_client(), seeds=2)
     assert "tool_a" in matrix.trials_by_tool
     assert "tool_broken" not in matrix.trials_by_tool
+
+
+def test_build_confusion_matrix_only_restricts_tasks_but_offers_the_whole_catalog():
+    seen: list[int] = []
+
+    class _CountingAdapter:
+        def call_with_tools(self, *, task_text, tools):
+            seen.append(len(tools))
+            return ToolCall(tool_name="tool_a", arguments={"title": "x"})
+
+    matrix = build_confusion_matrix(CATALOG, _CountingAdapter(), _fake_generator_client(), seeds=2, only={"tool_b"})
+    assert set(matrix.trials_per_tool) == {"tool_b"}  # tool_a got no tasks...
+    assert seen == [2, 2]  # ...but was offered on every call, so it can still steal tool_b's tasks
+    assert matrix.counts["tool_b"]["tool_a"] == 2
+    assert matrix.only == ["tool_b"]
+
+
+def test_build_confusion_matrix_tags_unsolvable_tasks_with_their_outcome():
+    def create(**kwargs):
+        prompt = kwargs["messages"][0]["content"]
+        text = "AMBIGUOUS: two tools fit" if "SOLVABLE" in prompt and "AMBIGUOUS" in prompt else "Write a Q3 report"
+        return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text=text)])
+
+    client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    matrix = build_confusion_matrix(CATALOG, _AlwaysToolAAdapter(), client, seeds=1)
+    # tool_a's task passed (the adapter always calls tool_a with the right title), tool_b's failed.
+    assert matrix.solvability_warnings == [
+        f"tool_a (seed 1, passed anyway, after {MAX_TASK_REGENERATIONS} regeneration(s)): two tools fit",
+        f"tool_b (seed 1, failed, after {MAX_TASK_REGENERATIONS} regeneration(s)): two tools fit",
+    ]
+
+
+def test_build_confusion_matrix_regenerates_an_ambiguous_task_with_the_reason_as_a_hint():
+    prompts: list[str] = []
+    verdicts = iter(["AMBIGUOUS: could mean list or count", "SOLVABLE: asks for a number"])
+
+    def create(**kwargs):
+        prompt = kwargs["messages"][0]["content"]
+        if "SOLVABLE" in prompt and "AMBIGUOUS" in prompt:
+            text = next(verdicts)
+        else:
+            prompts.append(prompt)
+            text = "Write a Q3 report"
+        return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text=text)])
+
+    client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    one_tool = ToolCatalog(tools=[CATALOG.tools[0]])
+    matrix = build_confusion_matrix(one_tool, _AlwaysToolAAdapter(), client, seeds=1)
+    assert len(prompts) == 2  # first attempt, then one regeneration
+    assert "could mean list or count" in prompts[1] and "could mean list or count" not in prompts[0]
+    assert matrix.solvability_warnings == []  # the second attempt was solvable, so nothing to flag
+    assert matrix.trials_per_tool["tool_a"] == 1
+
+
+def test_build_confusion_matrix_gives_up_regenerating_after_the_budget_and_flags_the_attempts():
+    calls = {"gen": 0}
+
+    def create(**kwargs):
+        prompt = kwargs["messages"][0]["content"]
+        if "SOLVABLE" in prompt and "AMBIGUOUS" in prompt:
+            text = "AMBIGUOUS: two tools are described identically"
+        else:
+            calls["gen"] += 1
+            text = "Write a Q3 report"
+        return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text=text)])
+
+    client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    one_tool = ToolCatalog(tools=[CATALOG.tools[0]])
+    matrix = build_confusion_matrix(one_tool, _AlwaysToolAAdapter(), client, seeds=1)
+    assert calls["gen"] == 1 + MAX_TASK_REGENERATIONS
+    assert matrix.solvability_warnings == [
+        f"tool_a (seed 1, passed anyway, after {MAX_TASK_REGENERATIONS} regeneration(s)): two tools are described identically"
+    ]
+
+
+def test_build_confusion_matrix_tallies_provider_errors_separately_from_no_calls():
+    class _TruncatedAdapter:
+        def call_with_tools(self, *, task_text, tools):
+            return ToolCall(tool_name=None, arguments={}, error="truncated at max_tokens")
+
+    matrix = build_confusion_matrix(CATALOG, _TruncatedAdapter(), _fake_generator_client(), seeds=1)
+    assert matrix.counts["tool_a"] == {ERROR: 1}
+    assert NO_CALL not in matrix.counts["tool_a"]
+
+
+def test_malformed_arguments_with_a_tool_name_count_as_the_right_tool_with_wrong_args():
+    class _MalformedArgsAdapter:
+        def call_with_tools(self, *, task_text, tools):
+            return ToolCall(tool_name="tool_a", arguments={}, error="malformed argument JSON")
+
+    matrix = build_confusion_matrix(CATALOG, _MalformedArgsAdapter(), _fake_generator_client(), seeds=1)
+    assert matrix.counts["tool_a"] == {"tool_a": 1}  # routing was right...
+    assert matrix.trials_by_tool["tool_a"][0].passed is False  # ...the arguments were not
+
+
+def test_build_confusion_matrix_with_workers_matches_sequential_and_keeps_catalog_order():
+    import threading
+
+    seen_threads: set[int] = set()
+
+    class _ThreadRecordingAdapter:
+        def call_with_tools(self, *, task_text, tools):
+            seen_threads.add(threading.get_ident())
+            return ToolCall(tool_name="tool_a", arguments={"title": "Write Q3 report"})
+
+    tools = [Tool(name=f"tool_{i}", description=f"Does {i}.", inputSchema=_SIMPLE_SCHEMA) for i in range(6)]
+    catalog = ToolCatalog(tools=tools)
+    seq = build_confusion_matrix(catalog, _ThreadRecordingAdapter(), _fake_generator_client(), seeds=2, workers=1)
+    par = build_confusion_matrix(catalog, _ThreadRecordingAdapter(), _fake_generator_client(), seeds=2, workers=4)
+    assert par.counts == seq.counts and par.trials_per_tool == seq.trials_per_tool
+    assert list(par.counts) == [t.name for t in tools]  # committed in catalog order, not completion order
+    assert len(seen_threads) > 1
+
+
+def test_build_confusion_matrix_records_arg_diff_on_trials():
+    class _DropsTitle:
+        def call_with_tools(self, *, task_text, tools):
+            return ToolCall(tool_name="tool_a", arguments={})
+
+    matrix = build_confusion_matrix(ToolCatalog(tools=[CATALOG.tools[0]]), _DropsTitle(), _fake_generator_client(), seeds=1)
+    assert matrix.trials_by_tool["tool_a"][0].arg_diff == {"title": "missing"}

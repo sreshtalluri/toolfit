@@ -1,0 +1,62 @@
+{
+  "model": "meta-llama/llama-3.1-8b-instruct",
+  "generator_model": "claude-sonnet-5",
+  "seeds": 10,
+  "fixes": [
+    {
+      "tool": "create_task",
+      "before_description": "Add a new task.",
+      "after_description": "Creates a brand-new task with a given title and priority, distinct from updating, listing, counting, or reminding existing tasks.",
+      "before_passed": 5,
+      "after_passed": 8,
+      "n": 10,
+      "p_value": 0.1875,
+      "accepted": false,
+      "reason": "rejected: improvement not significant after correction (p=0.188 vs corrected \u03b1=0.0100)"
+    },
+    {
+      "tool": "update_task",
+      "before_description": "Add a new task.",
+      "after_description": "Modify the title of an existing task identified by task_id, requiring both task_id and the new title as arguments.",
+      "before_passed": 8,
+      "after_passed": 8,
+      "n": 10,
+      "p_value": 0.75,
+      "accepted": false,
+      "reason": "rejected: no net change"
+    },
+    {
+      "tool": "list_tasks",
+      "before_description": "Get tasks by status.",
+      "after_description": "Retrieves and lists the full task records matching a given status, unlike count_tasks which only returns a numeric count; requires status.",
+      "before_passed": 8,
+      "after_passed": 10,
+      "n": 10,
+      "p_value": 0.25,
+      "accepted": false,
+      "reason": "rejected: improvement not significant after correction (p=0.250 vs corrected \u03b1=0.0100)"
+    },
+    {
+      "tool": "count_tasks",
+      "before_description": "Get tasks by status.",
+      "after_description": "Return the number of tasks matching a given status, without listing task details; requires the status parameter.",
+      "before_passed": 0,
+      "after_passed": 0,
+      "n": 10,
+      "p_value": 1.0,
+      "accepted": false,
+      "reason": "rejected: no net change"
+    },
+    {
+      "tool": "create_reminder",
+      "before_description": "Schedule a reminder for an existing task.",
+      "after_description": "Schedules a reminder for an existing task by ID, specifying when to notify, which channels to use, snooze duration, priority, and optional notes.",
+      "before_passed": 9,
+      "after_passed": 9,
+      "n": 10,
+      "p_value": 0.75,
+      "accepted": false,
+      "reason": "rejected: no net change"
+    }
+  ]
+}

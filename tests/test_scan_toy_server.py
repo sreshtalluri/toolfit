@@ -35,3 +35,21 @@ async def test_scan_flags_the_crm_examples_four_planted_problems():
         ("short_description", "search_contacts"),
     ]
     assert len(catalog.tools) == 8
+
+
+@pytest.mark.asyncio
+async def test_scan_flags_the_ops_examples_six_planted_problems():
+    # examples/ops_server.py is the catalog-at-scale example (49 tools); its static findings are
+    # pinned so the docs' sample output stays true. The behavioural plants (near-neighbours,
+    # undeclared preconditions) are only visible to eval and are listed in the file's docstring.
+    catalog = await fetch_catalog(server_params("examples/ops_server.py"))
+    findings = run_lint(catalog)
+    assert sorted((f.rule_id, f.tool_name or "") for f in findings) == [
+        ("deprecated_tool", "create_incident_legacy"),
+        ("deprecated_tool", "get_secret_v1"),
+        ("duplicate_description", ""),
+        ("duplicate_description", ""),
+        ("short_description", "set_config"),
+        ("short_description", "update_ticket"),
+    ]
+    assert len(catalog.tools) == 49

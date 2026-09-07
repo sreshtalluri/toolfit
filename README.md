@@ -112,6 +112,32 @@ choice is verifiable. The confusion matrix still shows the first call, so 0.1.x 
 comparable; `--max-steps 1` reproduces them exactly. Cost: roughly 2× the wall time on servers
 where the model actually chains.
 
+Both fixes, measured on the same server at 20 seeds
+([`docs/examples/mcp-server-git-precondition/`](docs/examples/mcp-server-git-precondition/)):
+
+```
+--mutate "git_commit:Records staged changes ... call git_add first ..."
+- Reached via an earlier call: 13/20 → 19/20
+
+--mutate "git_commit:... Automatically stages all modified and new files ..."
+- Reached via an earlier call: 13/20 → 0/20
+```
+
+Pass rate stayed 20/20 both ways, so the pass-rate verdict is "not significant" and the
+precondition line is the result. The second description is only honest if the server really
+auto-stages; the point is that either claim is now checkable in numbers. Re-measuring one tool
+this way doesn't need the whole catalog re-run: `--only git_commit` generates tasks for that tool
+alone while still offering the model all twelve. The same two mutations that way, 10 seeds, 36 s
+against 2551 s for the full run, with the p-value the precondition line now carries:
+
+```
+- Reached via an earlier call: 5/10 → 9/10 (two-sided p=0.1250; informational, not part of the verdict)
+- Reached via an earlier call: 5/10 → 0/10 (two-sided p=0.0625; informational, not part of the verdict)
+```
+
+Same direction as the 20-seed run, but 10 paired trials can't get a 5-trial swing under 0.05.
+That is what `--seeds 20` buys.
+
 The filesystem server tells the other half of the story
 ([`docs/examples/server-filesystem-multistep/`](docs/examples/server-filesystem-multistep/)):
 **55% → 79%**, but not uniformly. Tools that were losing to a precondition went to 5/5
@@ -123,8 +149,30 @@ you need to know before rewriting anything.
 
 Twelve rewrites were proposed for the filesystem server. Five improved the number (`8→10`,
 `6→8`); none were accepted, because one Bonferroni correction across twelve proposals at n=10
-sets α=0.004 and the report says so. Run `--fix-tool list_directory --fix-tool move_file
---seeds 20` on the tools the matrix names, not `--fix` on the whole catalog at once.
+sets α=0.004 and the report says so. Run `--only list_directory --only move_file --fix-tool
+list_directory --fix-tool move_file --seeds 20` on the tools the matrix names, not `--fix` on the
+whole catalog at once. `--only` generates tasks just for those tools while still offering the
+model the whole catalog, so the re-measure costs minutes instead of the full run.
+
+**At the size teams actually ship.** `examples/ops_server.py` is 49 tools across users, tickets,
+deployments, alerts, on-call, docs, flags and config, with planted problems listed in its
+docstring. Sonnet 5, 5 seeds, 48 min ([`docs/examples/ops-server/`](docs/examples/ops-server/)):
+**84%**, no tool excluded. The declared precondition (`promote_release` says to run
+`validate_release` first) was observed 5/5 and correctly not flagged. The near-neighbour pairs
+mostly did not confuse Sonnet; what failed was arguments (`create_flag` 2/5 with every call
+routed right) and no-calls (`snooze_alert` 4/5 replied with a question instead), so the report
+now prints what the model said in a **No-Call Replies** section. The id-lookup preconditions
+planted there never fired: generated tasks carry the id, so the model has no reason to look it
+up. Precondition findings are about *state* (stage before commit), not id lookups.
+
+**With a model that actually gets confused.** Llama 3.1 8B via OpenRouter on the toy server:
+64%, `count_tasks` 0/10, 6 malformed tool-call payloads in 50 tasks. That run is why ambiguous
+tasks are now regenerated, why unparseable arguments count as an argument failure on the named
+tool rather than a no-call, and why fixer proposals are capped at 25 words. With those in, the
+fixer's rewrite of `create_task` helped every time it was measured (5/10 → 8/10, then 14/20 →
+17/20 alone at 20 seeds) and was still rejected: p=0.23. A 15-point effect needs about 40 paired
+trials to clear 0.05, and toolfit says so rather than round up
+([`docs/examples/toy-server-llama/`](docs/examples/toy-server-llama/)).
 
 ## Two commands, two budgets
 

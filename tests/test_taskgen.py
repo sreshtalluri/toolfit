@@ -139,3 +139,24 @@ def test_check_solvability_with_no_text_block_fails_safe_as_ambiguous():
         _client_returning_no_text_block(), task, catalog_descriptions={"update_task": "Modify a task."}
     )
     assert result.solvable is False
+
+
+def test_generate_task_appends_the_ambiguity_hint_only_when_given():
+    seen: list[str] = []
+
+    def create(**kwargs):
+        seen.append(kwargs["messages"][0]["content"])
+        return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text="How many open tasks are there?")])
+
+    client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    generate_task(client, tool_name="count_tasks", tool_description="Get tasks by status.", arguments={"status": "open"})
+    generate_task(
+        client,
+        tool_name="count_tasks",
+        tool_description="Get tasks by status.",
+        arguments={"status": "open"},
+        ambiguity_hint="unclear whether the user wants the list or just a count",
+    )
+    assert "judged ambiguous" not in seen[0]
+    assert "unclear whether the user wants the list or just a count" in seen[1]
+    assert "without naming any tool" in seen[1]

@@ -80,6 +80,13 @@ _IDENTIFIER_GUIDANCE = (
 )
 
 
+_AMBIGUITY_GUIDANCE = (
+    "\n\nA previous version of this request was judged ambiguous for this reason: {reason}\n"
+    "Rewrite it so the outcome the user wants is unmistakable (what they want back, or what "
+    "should change), still in plain language and still without naming any tool or function."
+)
+
+
 @dataclass
 class GeneratedTask:
     text: str
@@ -94,17 +101,24 @@ def generate_task(
     tool_description: str,
     arguments: dict[str, str],
     withhold_description: bool = False,
+    ambiguity_hint: str | None = None,
 ) -> GeneratedTask:
     """Generate the natural-language request for a sampled (tool, arguments) tuple.
 
     `withhold_description` is the spike's circularity check (scripts/circularity_check.py,
     design doc "Residual circularity risk"): when True, the prompt never sees the tool's own
     description text, only the sampled arguments.
+
+    `ambiguity_hint` is the solvability check's reason a previous attempt was ambiguous; the
+    regenerated request must make the wanted OUTCOME unmistakable while still naming no tool
+    (the leakage check runs on the final text regardless).
     """
     description_line = "" if withhold_description else f"Action description: {tool_description}\n"
     prompt = _PROMPT_TEMPLATE.format(description_line=description_line, arguments=arguments)
     if _has_identifier_argument(arguments, tool_name=tool_name):
         prompt += _IDENTIFIER_GUIDANCE
+    if ambiguity_hint:
+        prompt += _AMBIGUITY_GUIDANCE.format(reason=ambiguity_hint)
     response = _with_retry(
         lambda: client.messages.create(
             model=GENERATOR_MODEL,

@@ -18,13 +18,25 @@ from typing import Any, Callable
 
 # Deterministic example values per parameter name, so runs are reproducible without an LLM call
 # for sampling itself (that call is reserved for the *task generator*, see taskgen.py).
+# Pools are deliberately wide: with three titles and three priorities, create_task could only
+# ever produce nine distinct argument sets, so seeds past nine were correlated repeats and a
+# 20-seed run carried ~9 seeds of information (measured: 9/20 distinct on the toy server).
 _EXAMPLES: dict[str, list[str]] = {
-    "title": ["Write Q3 report", "Fix login bug", "Book dentist appointment"],
+    "title": [
+        "Write Q3 report", "Fix login bug", "Book dentist appointment", "Renew passport",
+        "Prepare board slides", "Call the plumber", "Review pull request 482", "Order printer toner",
+        "Draft onboarding checklist", "Migrate staging database", "Send invoice to Acme",
+        "Update team roster",
+    ],
     "priority": ["high", "medium", "low"],
-    "task_id": ["t1", "t2", "t3"],
+    "task_id": ["t1", "t2", "t3", "t7", "t12", "t42"],
     "status": ["open", "in_progress", "done"],
     "notify_channels": ["email", "sms", "slack"],
-    "notes": ["Bring snacks", "Confirm with manager first", "Low priority"],
+    "notes": [
+        "Bring snacks", "Confirm with manager first", "Low priority", "Needs legal sign-off",
+        "Blocked on vendor reply", "Do this before Friday", "Ask Priya for the numbers",
+        "Only after the deploy freeze lifts",
+    ],
 }
 
 _FORMAT_GENERATORS: dict[str, Callable[[random.Random], str]] = {

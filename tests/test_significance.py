@@ -100,3 +100,13 @@ def test_bonferroni_correct_with_one_test_uses_alpha_unchanged():
 
 def test_bonferroni_correct_handles_empty_input():
     assert bonferroni_correct([]) == []
+
+
+def test_two_sided_pvalue_doubles_the_larger_tail_and_is_symmetric():
+    from toolfit.grade.significance import paired_exact_pvalue_two_sided
+
+    down = paired_exact_pvalue_two_sided([True] * 5, [False] * 5)
+    up = paired_exact_pvalue_two_sided([False] * 5, [True] * 5)
+    assert down == up == pytest.approx(2 / 32)
+    assert paired_exact_pvalue_two_sided([True, False], [True, False]) == 1.0  # no discordant pairs
+    assert paired_exact_pvalue_two_sided([True, False], [False, True]) == 1.0  # 1 up, 1 down: capped

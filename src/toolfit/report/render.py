@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import re
+
 from toolfit.connect.client import ToolCatalog
 from toolfit.fix.fixer import FixVerdict, ProposedFix
 from toolfit.gen.taskgen import GeneratedTask
-from toolfit.grade.confusion import HALLUCINATED, NO_CALL, ConfusionMatrix, undeclared_preconditions
+from toolfit.grade.confusion import ERROR, HALLUCINATED, NO_CALL, ConfusionMatrix, undeclared_preconditions
 from toolfit.grade.mutator import MutationResult, MutationTrialResult
 from toolfit.grade.significance import wilson_interval
 from toolfit.lint.rules import LintFinding
@@ -73,11 +75,23 @@ def render_spike_report(
     return "\n".join(lines)
 
 
+_REFUSAL = re.compile(r"\b(can(?:no|')t|cannot|won't|unable|not able|don't have|do not have|not (?:allowed|permitted|possible)|deprecated)\b", re.I)
+
+
+def _classify_reply(text: str) -> str:
+    """Coarse, structural tag for a no-call reply: did the model ask, refuse, or just talk?"""
+    if "?" in text:
+        return "asked"
+    if _REFUSAL.search(text):
+        return "refused"
+    return "other"
+
+
 def render_confusion_matrix(matrix: ConfusionMatrix) -> str:
     tools = sorted(matrix.counts.keys())
     actual_values = {actual for row in matrix.counts.values() for actual in row}
-    ordered_columns = sorted((actual_values | set(tools)) - {NO_CALL, HALLUCINATED})
-    for special in (NO_CALL, HALLUCINATED):
+    ordered_columns = sorted((actual_values | set(tools)) - {NO_CALL, HALLUCINATED, ERROR})
+    for special in (NO_CALL, HALLUCINATED, ERROR):
         if special in actual_values:
             ordered_columns.append(special)
 
@@ -142,6 +156,40 @@ def render_confusion_matrix(matrix: ConfusionMatrix) -> str:
             lines.append("")
             lines += [f"- {u}" for u in undeclared]
 
+    arg_lines = []
+    for tool in tools:
+        trials = matrix.trials_by_tool.get(tool, [])
+        tally: dict[tuple[str, str], int] = {}
+        for trial in trials:
+            for param, why in trial.arg_diff.items():
+                tally[(param, why)] = tally.get((param, why), 0) + 1
+        if tally:
+            parts = [f"{param} {why} {n}/{len(trials)}" for (param, why), n in sorted(tally.items(), key=lambda kv: -kv[1])]
+            arg_lines.append(f"- {tool}: " + "; ".join(parts))
+    if arg_lines:
+        # Right tool, wrong arguments, broken down per parameter. On strong models this is where
+        # most of the remaining failures are, and "wrong args" alone told an author nothing.
+        lines += [
+            "",
+            "## Argument Failures",
+            "",
+            "Trials that reached the right tool with the wrong arguments, per parameter: `missing` = "
+            "expected but not sent, `extra` = sent but not expected, `wrong` = value differs, "
+            "`* malformed/duplicated argument JSON` = the argument text could not be parsed.",
+            "",
+        ] + arg_lines
+
+    no_call_lines = []
+    for tool in tools:
+        for seed, trial in enumerate(matrix.trials_by_tool.get(tool, []), start=1):
+            replies = [c.text for c in trial.calls if c.tool_name is None and c.text]
+            if replies and not trial.passed:
+                no_call_lines.append(f"- {tool} (seed {seed}, {_classify_reply(replies[0])}): {replies[0]}")
+    if no_call_lines:
+        # What the model said instead of calling: a question means the task or description left
+        # something unstated; a refusal means the description reads as unsafe or the tool is
+        # marked deprecated. Neither is a routing problem, and both are things an author can act on.
+        lines += ["", "## No-Call Replies", ""] + no_call_lines
     if matrix.leakage_warnings:
         lines += ["", "## Leakage Warnings"] + [f"- {w}" for w in matrix.leakage_warnings]
     if matrix.solvability_warnings:
@@ -157,6 +205,11 @@ def render_confusion_matrix(matrix: ConfusionMatrix) -> str:
         f"- Seeds per tool: {matrix.seeds}",
         f"- Max steps per task: {matrix.max_steps}",
     ]
+    if matrix.only:
+        lines.append(
+            f"- Tools evaluated (--only): {', '.join(matrix.only)} — the model was offered the whole "
+            f"catalog ({len(matrix.descriptions)} tools) on every call"
+        )
 
     return "\n".join(lines)
 
@@ -182,7 +235,8 @@ def render_mutation_results(results: list[MutationTrialResult]) -> str:
             f"- New description: {r.new_description!r}",
             f"- Before: {before_passed}/{before_n} ({before_passed / before_n:.0%}), 95% CI [{before_lo:.0%}, {before_hi:.0%}]",
             f"- After:  {after_passed}/{after_n} ({after_passed / after_n:.0%}), 95% CI [{after_lo:.0%}, {after_hi:.0%}]",
-            f"- Reached via an earlier call: {r.before_preconditions}/{before_n} → {r.after_preconditions}/{after_n}",
+            f"- Reached via an earlier call: {r.before_preconditions}/{before_n} → {r.after_preconditions}/{after_n}"
+            f" (two-sided p={r.precondition_p_value:.4f}; informational, not part of the verdict)",
             f"- p-value: {r.p_value:.4f}",
             f"- Verdict (Bonferroni-corrected): {verdict}",
         ]
@@ -208,7 +262,8 @@ def render_fix_results(verdicts: list[FixVerdict]) -> str:
             n = len(t.before_passes)
             lines += [
                 f"- Pass rate: {sum(t.before_passes)}/{n} → {sum(t.after_passes)}/{n}, p-value {t.p_value:.4f}",
-                f"- Reached via an earlier call: {t.before_preconditions}/{n} → {t.after_preconditions}/{n}",
+                f"- Reached via an earlier call: {t.before_preconditions}/{n} → {t.after_preconditions}/{n}"
+                f" (two-sided p={t.precondition_p_value:.4f})",
             ]
         lines.append(f"- Reason: {v.reason}")
     return "\n".join(lines)

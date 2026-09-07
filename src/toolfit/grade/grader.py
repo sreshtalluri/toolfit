@@ -27,6 +27,11 @@ class GradeResult:
     no_call: bool  # model made no tool call
     steps_to_correct: int | None = None  # 1-based index of the passing call in a multi-step trial
     preceding: list[str] = field(default_factory=list)  # tools called before the passing call
+    # Why the arguments failed, per parameter, when the right tool was called with the wrong
+    # arguments: "missing" (expected, not sent), "extra" (sent, not expected), "wrong" (value
+    # differs after canonicalisation), or {"*": <error>} when the argument JSON could not be
+    # parsed ("malformed argument JSON" / "duplicated argument JSON"). Structural, no model opinion — the same rule as the pass/fail itself.
+    arg_diff: dict[str, str] = field(default_factory=dict)
 
     @property
     def passed(self) -> bool:
@@ -111,4 +116,24 @@ def grade_sequence(task: GeneratedTask, calls: list[ToolCall], *, catalog_tool_n
     # Failure Mode (design doc): a hallucinated/nonexistent tool name is scored as a miss, never
     # a crash, never silently dropped. Attributed to the first call, which is what the matrix shows.
     hallucinated = named[0].tool_name not in catalog_tool_names
-    return GradeResult(correct_tool=correct_tool, correct_args=False, hallucinated=hallucinated, no_call=False)
+    arg_diff: dict[str, str] = {}
+    if correct_tool:
+        attempt = next(c for c in named if c.tool_name == task.tool_name)
+        arg_diff = {"*": attempt.error} if attempt.error else diff_args(expected, _canonicalize_args(attempt.arguments))
+    return GradeResult(
+        correct_tool=correct_tool, correct_args=False, hallucinated=hallucinated, no_call=False, arg_diff=arg_diff
+    )
+
+
+def diff_args(expected: dict, actual: dict) -> dict[str, str]:
+    """Per-parameter reason a canonicalised argument set differs from the expected one."""
+    diff: dict[str, str] = {}
+    for key in expected:
+        if key not in actual:
+            diff[key] = "missing"
+        elif actual[key] != expected[key]:
+            diff[key] = "wrong"
+    for key in actual:
+        if key not in expected:
+            diff[key] = "extra"
+    return diff
