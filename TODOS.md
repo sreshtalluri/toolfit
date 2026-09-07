@@ -15,15 +15,8 @@ evidence would promote it; nothing is built on speculation.
 - **Non-Anthropic model under test.** Done 2026-09-06 (Llama 3.1 8B via OpenRouter, toy server,
   `docs/examples/toy-server-llama/`). Next: the same model on `examples/ops_server.py` at 49
   tools — expect malformed-JSON and argument failures to dominate. **Priority:** P2
-- **Concurrency across tools (design doc Eng Req #1).** Everything is sequential; a 12-tool server
-  at 10 seeds × 3 steps is ~20 min. `--only` covers the iterate loop, so this matters mainly for
-  first runs and the Action. A `ThreadPoolExecutor` over tools in `build_confusion_matrix` with
-  the existing retry/backoff is ~15 lines; needs a live timing comparison and a check that rate
-  limits don't turn into `(no call)` inflation. **Priority:** P2
-- **Argument-level diagnostics.** Most remaining misses on strong models are arguments
-  (`read_multiple_files` 0/5), and the report only says "wrong args". A per-parameter breakdown —
-  omitted required, wrong enum, wrong format — tells an author which field to document.
-  **Priority:** P2
+- ~~**Concurrency across tools (design doc Eng Req #1).**~~ Built 2026-09-07: `--workers` (default 4), outcomes committed in catalog order. Timing comparison pending on the next 49-tool run.
+- ~~**Argument-level diagnostics.**~~ Built 2026-09-07: `## Argument Failures` per tool and parameter (`missing` / `extra` / `wrong` / `* duplicated|malformed argument JSON`). First use found the Llama duplicated-JSON ceiling within one run.
 - ~~**Separate `(error)` column.**~~ Built 2026-09-06 once the first Llama 3.1 8B run produced
   6 malformed-JSON calls in 50 tasks. Malformed arguments keep the named tool (argument failure);
   truncation/empty responses land in `(error)`.
