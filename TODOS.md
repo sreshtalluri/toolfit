@@ -20,6 +20,18 @@ evidence would promote it; nothing is built on speculation.
 - ~~**Separate `(error)` column.**~~ Built 2026-09-06 once the first Llama 3.1 8B run produced
   6 malformed-JSON calls in 50 tasks. Malformed arguments keep the named tool (argument failure);
   truncation/empty responses land in `(error)`.
+- ~~**Failure Attribution summary.**~~ Built 2026-09-07: new `## Failure Attribution` section at
+  the top of the eval report splits total failure mass into four buckets — description confusion,
+  author-clarifiable arguments, model output mechanics, and (excluded from the failure count)
+  correct deprecated-tool avoidance — with counts and percentages. Report-layer aggregation over
+  existing `TrialRecord`/`ToolCall` fields, no new instrumentation.
+- ~~**Per-model mechanics floor.**~~ Built 2026-09-07: `## Mechanics Floor` section reports
+  malformed/duplicated-argument-JSON calls plus hallucinated-tool-name calls as one baseline
+  count, separate from the description-fixable buckets, so a catalog author doesn't chase
+  failures no description edit can move.
+- ~~**Wire `deprecated_tool` into eval.**~~ Built 2026-09-07: `build_confusion_matrix` now runs
+  `lint/rules.py::run_lint` once and records `ConfusionMatrix.deprecated_tools`, feeding Failure
+  Attribution bucket 4 without duplicating the self-deprecation check.
 - **Task regeneration budget.** Now 2 retries with the solvability reason as a hint. Watch the
   `after N regeneration(s)` counts on real servers: if ambiguity persists mostly on tools with
   duplicate descriptions, the budget is right; if it persists elsewhere, the hint prompt needs

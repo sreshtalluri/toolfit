@@ -336,3 +336,72 @@ def test_render_argument_failures_per_parameter_and_tags_no_call_replies():
     assert "## Argument Failures" in report
     assert "- create_flag: default_on wrong 2/3; description missing 1/3" in report
     assert "- create_flag (seed 3, refused): I can't create flags without a key." in report
+
+
+def test_render_confusion_matrix_shows_failure_attribution_buckets():
+    from toolfit.gen.taskgen import GeneratedTask
+    from toolfit.grade.confusion import TrialRecord
+    from toolfit.run.adapters import ToolCall
+
+    matrix = ConfusionMatrix()
+    matrix.descriptions = {"tool_a": "Does A.", "tool_b": "Does B."}
+    task = GeneratedTask(text="do it", tool_name="tool_a", arguments={})
+    matrix.trials_by_tool = {
+        "tool_a": [
+            TrialRecord(task=task, passed=True, calls=[ToolCall("tool_a", {})]),
+            # description confusion: a different real catalog tool was called
+            TrialRecord(task=task, passed=False, calls=[ToolCall("tool_b", {})]),
+            # author-clarifiable: right tool, wrong arguments
+            TrialRecord(task=task, passed=False, calls=[ToolCall("tool_a", {})], arg_diff={"x": "wrong"}),
+            # mechanics: hallucinated tool name
+            TrialRecord(task=task, passed=False, calls=[ToolCall("bogus_tool", {})]),
+            # mechanics: malformed/duplicated argument JSON on the named-tool call
+            TrialRecord(task=task, passed=False, calls=[ToolCall("tool_a", {})], arg_diff={"*": "malformed argument JSON"}),
+        ]
+    }
+
+    report = render_confusion_matrix(matrix)
+
+    assert "## Failure Attribution" in report
+    assert "4/5 trials failed." in report
+    assert "Description confusion: 1 (25%)" in report
+    assert "Author-clarifiable arguments: 1 (25%)" in report
+    assert "Model output mechanics: 2 (50%)" in report
+    assert "## Mechanics Floor" in report
+    assert (
+        "2/5 trial(s) failed for reasons no description edit can change: 1 malformed/duplicated argument JSON, "
+        "1 called a tool name that isn't in the catalog." in report
+    )
+    # Failure Attribution must appear before the raw matrix — which bucket a failure lands in
+    # matters more than the table it rolls up from.
+    assert report.index("## Failure Attribution") < report.index("## Confusion Matrix")
+
+
+def test_render_confusion_matrix_excludes_deprecated_avoidance_from_failure_mass():
+    from toolfit.gen.taskgen import GeneratedTask
+    from toolfit.grade.confusion import TrialRecord
+    from toolfit.run.adapters import ToolCall
+
+    matrix = ConfusionMatrix()
+    matrix.deprecated_tools = {"old_tool"}
+    task = GeneratedTask(text="do the old thing", tool_name="old_tool", arguments={})
+    matrix.trials_by_tool = {
+        "old_tool": [TrialRecord(task=task, passed=False, calls=[ToolCall("other_tool", {})])],
+    }
+
+    report = render_confusion_matrix(matrix)
+
+    assert "0/1 trials failed." in report
+    assert "Correct deprecated-tool avoidance: 1 (excluded above" in report
+
+
+def test_render_confusion_matrix_omits_failure_attribution_when_no_trial_data_is_present():
+    matrix = ConfusionMatrix()
+    matrix.record(intended_tool="tool_a", actual_tool="tool_a")
+    matrix.trials_per_tool = {"tool_a": 1}
+    matrix.distinct_trials = {"tool_a": 1}
+
+    report = render_confusion_matrix(matrix)
+
+    assert "## Failure Attribution" not in report
+    assert "## Mechanics Floor" not in report
