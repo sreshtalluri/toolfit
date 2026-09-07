@@ -64,7 +64,7 @@ def test_call_with_tools_warns_on_truncation_before_a_tool_use_block(capsys):
     fake_response = SimpleNamespace(content=[], stop_reason="max_tokens")
     adapter = AnthropicAdapter(_FakeAnthropicClient(fake_response))
     result = adapter.call_with_tools(task_text="hello", tools=TOOLS)
-    assert result == ToolCall(tool_name=None, arguments={})
+    assert result == ToolCall(tool_name=None, arguments={}, error="truncated at max_tokens")
     captured = capsys.readouterr()
     assert "truncated" in captured.err
     assert "max_tokens" in captured.err
@@ -220,7 +220,9 @@ def test_openai_compatible_call_treats_malformed_tool_call_json_as_a_miss_not_a_
     fake_response = _FakeOpenAIResponse(choices=[_FakeOpenAIChoice(_FakeOpenAIMessage(tool_calls=[fake_call]))])
     adapter = OpenAIAdapter(_FakeOpenAIClient(fake_response), model="gpt-5.5")
     result = adapter.call_with_tools(task_text="buy milk, low priority", tools=TOOLS)
-    assert result == ToolCall(tool_name=None, arguments={})
+    # The model DID choose create_task; only its arguments were unreadable. Keep the name so the
+    # grader scores "right tool, wrong args" rather than "no call".
+    assert (result.tool_name, result.arguments, result.error) == ("create_task", {}, "malformed argument JSON")
     captured = capsys.readouterr()
     assert "malformed" in captured.err.lower()
     assert "json" in captured.err.lower()
@@ -234,7 +236,7 @@ def test_openai_compatible_call_returns_a_miss_when_choices_is_empty(capsys):
     fake_response = _FakeOpenAIResponse(choices=[])
     adapter = OpenAIAdapter(_FakeOpenAIClient(fake_response), model="gpt-5.5")
     result = adapter.call_with_tools(task_text="hello", tools=TOOLS)
-    assert result == ToolCall(tool_name=None, arguments={})
+    assert result == ToolCall(tool_name=None, arguments={}, error="empty choices")
     captured = capsys.readouterr()
     assert captured.err
 
@@ -402,3 +404,23 @@ def test_openai_compatible_call_retries_on_rate_limit_then_succeeds(monkeypatch)
     result = adapter.call_with_tools(task_text="buy milk, low priority", tools=TOOLS)
     assert result.tool_name == "create_task"
     assert attempts["count"] == 2
+
+
+def test_anthropic_truncation_yields_an_error_call_not_a_bare_no_call(capsys):
+    fake_response = SimpleNamespace(content=[], stop_reason="max_tokens")
+    adapter = AnthropicAdapter(_FakeAnthropicClient(fake_response))
+    result = adapter.call_with_tools(task_text="hello", tools=TOOLS)
+    assert result.tool_name is None and result.error == "truncated at max_tokens"
+
+
+def test_openai_compatible_empty_choices_yields_an_error_call(capsys):
+    adapter = OpenAIAdapter(_FakeOpenAIClient(_FakeOpenAIResponse(choices=[])), model="gpt-5.5")
+    result = adapter.call_with_tools(task_text="hello", tools=TOOLS)
+    assert result.tool_name is None and result.error == "empty choices"
+
+
+def test_openai_compatible_plain_text_reply_is_a_genuine_no_call_without_error():
+    fake_response = _FakeOpenAIResponse(choices=[_FakeOpenAIChoice(_FakeOpenAIMessage(tool_calls=None))])
+    adapter = OpenAIAdapter(_FakeOpenAIClient(fake_response), model="gpt-5.5")
+    result = adapter.call_with_tools(task_text="hello", tools=TOOLS)
+    assert result.tool_name is None and result.error is None

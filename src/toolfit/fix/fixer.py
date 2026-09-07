@@ -23,10 +23,10 @@ Parameters: {parameters}
 Other tools in the same catalog:
 {other_tools}
 
-Write a replacement description (one sentence) that clearly distinguishes this tool from the \
-others, states what it does and what arguments it needs. Mention only the parameters and values \
-listed above — do not invent optional fields, defaults, or example values. Reply with just the new \
-description text, nothing else."""
+Write a replacement description (one sentence, at most 25 words) that clearly distinguishes this \
+tool from the others, states what it does and what arguments it needs. Mention only the parameters \
+and values listed above — do not invent optional fields, defaults, or example values, and do not \
+enumerate every parameter. Reply with just the new description text, nothing else."""
 
 
 def _describe_parameters(input_schema: dict | None) -> str:

@@ -188,7 +188,7 @@ def _matrix_multistep(max_steps, monkeypatch):
     monkeypatch.setattr(
         confusion,
         "generate_task",
-        lambda client, *, tool_name, tool_description, arguments: GeneratedTask(
+        lambda client, *, tool_name, tool_description, arguments, ambiguity_hint=None: GeneratedTask(
             text=f"do {tool_name} {json.dumps(arguments)}", tool_name=tool_name, arguments=arguments
         ),
     )

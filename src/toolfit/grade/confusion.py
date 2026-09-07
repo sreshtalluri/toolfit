@@ -17,6 +17,8 @@ from toolfit.grade.grader import grade_sequence
 from toolfit.run.adapters import ModelAdapter, ResultFor, ToolCall, run_steps
 
 NO_CALL = "(no call)"
+ERROR = "(error)"  # provider/model output unusable: truncated, empty, or unparseable before any call
+MAX_TASK_REGENERATIONS = 2  # extra generator attempts when the solvability check says AMBIGUOUS
 HALLUCINATED = "(hallucinated)"
 
 
@@ -129,17 +131,28 @@ def build_confusion_matrix(
                 args = sample_arguments(tool.input_schema, seed=seed)
                 sampled_args.append(args)
 
-                task = generate_task(
-                    generator_client,
-                    tool_name=tool.name,
-                    tool_description=tool.description or "",
-                    arguments=args,
-                )
+                # The generator never sees the tool's name, only its description and arguments, so
+                # a vague description yields a vague request ("show me the open tasks" for a
+                # count tool) that no rewrite can rescue, because mutation/fix trials reuse the
+                # task. When the solvability check calls the request ambiguous, regenerate with
+                # its reason as a hint — bounded, and the last attempt is kept and flagged either
+                # way (on a catalog with duplicate descriptions the ambiguity is the finding).
+                hint: str | None = None
+                for attempt in range(MAX_TASK_REGENERATIONS + 1):
+                    task = generate_task(
+                        generator_client,
+                        tool_name=tool.name,
+                        tool_description=tool.description or "",
+                        arguments=args,
+                        ambiguity_hint=hint,
+                    )
+                    solvability = check_solvability(generator_client, task, catalog_descriptions=catalog_descriptions)
+                    if solvability.solvable:
+                        break
+                    hint = solvability.reasoning
 
                 if not check_no_leakage(task, catalog_tool_names=catalog_names):
                     matrix.leakage_warnings.append(f"{tool.name} (seed {seed}): {task.text!r}")
-
-                solvability = check_solvability(generator_client, task, catalog_descriptions=catalog_descriptions)
 
                 calls = run_steps(
                     adapter,
@@ -156,12 +169,12 @@ def build_confusion_matrix(
                     # (sampler's fault, e.g. head+tail) or on solvable ones (the description's).
                     outcome = "passed anyway" if result.passed else "failed"
                     matrix.solvability_warnings.append(
-                        f"{tool.name} (seed {seed}, {outcome}): {solvability.reasoning}"
+                        f"{tool.name} (seed {seed}, {outcome}, after {attempt} regeneration(s)): {solvability.reasoning}"
                     )
                 # The matrix stays intended × FIRST call so it is comparable with single-step
                 # runs; the precondition edges below are what explain an off-diagonal first call.
                 if result.no_call:
-                    actual = NO_CALL
+                    actual = ERROR if any(c.error for c in calls) else NO_CALL
                 elif result.hallucinated:
                     actual = HALLUCINATED
                 else:

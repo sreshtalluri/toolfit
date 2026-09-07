@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+First run with a model that actually gets confused (Llama 3.1 8B via OpenRouter, toy server,
+64%) changed three things:
+
+- **Ambiguous tasks are regenerated.** The generator never sees the tool's name, so a vague
+  description ("Get tasks by status." on a count tool) yields a vague request ("show me the open
+  tasks") that no rewrite can rescue, because mutation/fix trials reuse the task. When the
+  solvability check says AMBIGUOUS, the task is regenerated up to 2 times with the reason as a
+  hint. The last attempt is kept and flagged either way: on a catalog with duplicate
+  descriptions the ambiguity is the finding.
+- **`(error)` column.** Truncated or empty provider responses are tallied as `(error)`, not
+  `(no call)`. Unparseable argument JSON keeps the tool the model named and scores as an argument
+  failure — 6 of 50 Llama calls did this and read as the model ignoring the tool.
+- **Fixer proposals are capped at 25 words.** Two of four rewrites made Llama worse (4→3, 9→7);
+  both were long parameter enumerations.
+- New example: `examples/ops_server.py`, 49 tools across users/tickets/deployments/alerts/
+  on-call/docs/flags/config, with planted static and behavioural problems (docstring lists
+  them; scan findings pinned by test).
+
 - `--only NAME` (repeatable): generate tasks only for the named tools while still offering the
   model the whole catalog. This is the iterate loop the fix flow was missing — measured on
   mcp-server-git, the full 12-tool run at 20 seeds took 2551 s and `--only git_commit` with one

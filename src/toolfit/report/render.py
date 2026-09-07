@@ -5,7 +5,7 @@ from __future__ import annotations
 from toolfit.connect.client import ToolCatalog
 from toolfit.fix.fixer import FixVerdict, ProposedFix
 from toolfit.gen.taskgen import GeneratedTask
-from toolfit.grade.confusion import HALLUCINATED, NO_CALL, ConfusionMatrix, undeclared_preconditions
+from toolfit.grade.confusion import ERROR, HALLUCINATED, NO_CALL, ConfusionMatrix, undeclared_preconditions
 from toolfit.grade.mutator import MutationResult, MutationTrialResult
 from toolfit.grade.significance import wilson_interval
 from toolfit.lint.rules import LintFinding
@@ -76,8 +76,8 @@ def render_spike_report(
 def render_confusion_matrix(matrix: ConfusionMatrix) -> str:
     tools = sorted(matrix.counts.keys())
     actual_values = {actual for row in matrix.counts.values() for actual in row}
-    ordered_columns = sorted((actual_values | set(tools)) - {NO_CALL, HALLUCINATED})
-    for special in (NO_CALL, HALLUCINATED):
+    ordered_columns = sorted((actual_values | set(tools)) - {NO_CALL, HALLUCINATED, ERROR})
+    for special in (NO_CALL, HALLUCINATED, ERROR):
         if special in actual_values:
             ordered_columns.append(special)
 

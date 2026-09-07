@@ -147,7 +147,10 @@ the directory where the user wants them. The report is stdout; warnings and prog
 ### Reading the report, section by section
 
 1. **Confusion Matrix** — rows are the tool a task was written for, columns what the model called
-   **first**, plus `(no call)` and `(hallucinated)`. Off-diagonal mass is the finding. A single
+   **first**, plus `(no call)`, `(hallucinated)` and `(error)`. `(error)` is the provider's fault
+   (truncated before any call, empty response), not the catalog's; a model that picked the right
+   tool but emitted unparseable argument JSON is counted under that tool as an argument failure,
+   with a `malformed` warning on stderr. Off-diagonal mass is the finding. A single
    column that collects calls from many rows is usually a *precondition* tool (`git_add` before
    `git_commit`, `list_allowed_directories` before any path op) — read the next section before
    calling it confusion.
@@ -165,7 +168,11 @@ the directory where the user wants them. The report is stdout; warnings and prog
 3. **Pass Rates** — right tool *and* right arguments, per tool, with a Wilson 95% interval. At n=10
    the interval on 9/10 is [60%, 98%]; don't over-read one-trial differences.
 4. **Leakage / Solvability Warnings** — generated tasks that named a tool, or that a second model
-   judged ambiguous given the catalog. Reported, never silently dropped. Many solvability warnings
+   judged ambiguous given the catalog *after up to 2 regenerations with the ambiguity reason fed
+   back* (the generator never sees the tool's name, so a vague description yields a vague
+   request; the retry makes the wanted outcome explicit without naming tools). Each warning says
+   whether the trial `failed` or `passed anyway` and how many regenerations it took. Reported,
+   never silently dropped. Many solvability warnings
    on one tool usually mean the *catalog* is ambiguous (that's the finding) or the schema allows
    combinations the server doesn't (e.g. `head` and `tail` together).
 5. **Schema Warnings** — tools excluded because the sampler couldn't produce arguments. They are

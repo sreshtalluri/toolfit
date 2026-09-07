@@ -23,10 +23,13 @@ evidence would promote it; nothing is built on speculation.
   (`read_multiple_files` 0/5), and the report only says "wrong args". A per-parameter breakdown —
   omitted required, wrong enum, wrong format — tells an author which field to document.
   **Priority:** P2
-- **Separate `(error)` column.** max_tokens truncation, malformed tool-call JSON, and empty
-  `choices` are tallied with genuine no-calls. In ~900 Sonnet trials, zero such events fired and
-  the 11 `(no call)` trials were genuine (model asked a question instead). Build it when an
-  OpenRouter run shows the column inflating. **Priority:** P3 — deferred on evidence.
+- ~~**Separate `(error)` column.**~~ Built 2026-09-06 once the first Llama 3.1 8B run produced
+  6 malformed-JSON calls in 50 tasks. Malformed arguments keep the named tool (argument failure);
+  truncation/empty responses land in `(error)`.
+- **Task regeneration budget.** Now 2 retries with the solvability reason as a hint. Watch the
+  `after N regeneration(s)` counts on real servers: if ambiguity persists mostly on tools with
+  duplicate descriptions, the budget is right; if it persists elsewhere, the hint prompt needs
+  work. **Priority:** P2 (observe)
 - **Holm–Bonferroni instead of Bonferroni.** Uniformly more powerful with the same family-wise
   guarantee, ~10 lines in `grade/significance.py`. No run so far would have changed verdict: the
   rejections were "no failures to fix", not "p just above α". Build it when a rejection lands

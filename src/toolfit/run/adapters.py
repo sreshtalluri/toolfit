@@ -65,6 +65,10 @@ class ToolCall:
     tool_name: str | None  # None means the model made no tool call at all
     arguments: dict
     call_id: str = ""  # provider's id for the call; needed to hand a result back in multi-step runs
+    # Set when the provider/model output was unusable (truncated before any call, empty choices,
+    # unparseable argument JSON). With a tool_name it means "right tool, arguments unreadable";
+    # with tool_name=None it lands in the report's (error) column instead of (no call).
+    error: str | None = None
 
 
 ResultFor = Callable[[ToolCall], dict]
@@ -83,7 +87,9 @@ def run_steps(
     run = getattr(adapter, "run", None)
     if run is None or max_steps <= 1:
         call = adapter.call_with_tools(task_text=task_text, tools=tools)
-        return [call] if call.tool_name is not None else []
+        # A bare no-call is dropped; an error call (truncated/empty/malformed) is kept so the
+        # matrix can tally it under (error) rather than (no call).
+        return [call] if call.tool_name is not None or call.error else []
     return run(task_text=task_text, tools=tools, max_steps=max_steps, result_for=result_for)
 
 
@@ -138,9 +144,11 @@ class AnthropicAdapter:
             tool_uses = [b for b in response.content if b.type == "tool_use"]
             if not tool_uses:
                 if response.stop_reason == "max_tokens":
-                    # Adaptive thinking can spend the whole budget before a tool_use block — a real
-                    # no-call outcome, scored as a miss by the grader, never a crash here.
+                    # Adaptive thinking can spend the whole budget before a tool_use block — scored
+                    # as a miss by the grader, never a crash here, and tallied as (error) rather
+                    # than (no call) so a flaky provider doesn't read as a confusing catalog.
                     print("WARNING: response truncated at max_tokens before a tool_use block was found", file=sys.stderr)
+                    calls.append(ToolCall(tool_name=None, arguments={}, error="truncated at max_tokens"))
                 break
             # Blocks go back verbatim (thinking blocks carry signatures the API checks).
             messages.append({"role": "assistant", "content": [_block_dict(b) for b in response.content]})
@@ -170,9 +178,13 @@ def _openai_compatible_run(
             # Gateways (OpenRouter especially) return an empty choices array on an upstream error —
             # a real no-call outcome, scored as a miss rather than an IndexError mid-catalog.
             print("WARNING: response had no choices (upstream provider error?)", file=sys.stderr)
+            calls.append(ToolCall(tool_name=None, arguments={}, error="empty choices"))
             break
         message = response.choices[0].message
         if not message.tool_calls:
+            if getattr(response.choices[0], "finish_reason", None) == "length":
+                print("WARNING: response truncated (finish_reason=length) before any tool call", file=sys.stderr)
+                calls.append(ToolCall(tool_name=None, arguments={}, error="truncated (finish_reason=length)"))
             break
         messages.append(
             {
@@ -194,11 +206,13 @@ def _openai_compatible_run(
                 arguments = json.loads(tc.function.arguments)
                 call = ToolCall(tool_name=tc.function.name, arguments=arguments, call_id=call_id)
             except json.JSONDecodeError:
-                # Malformed tool-call JSON is a model-output problem, not a server schema problem:
-                # record a no-call (the grader scores it as a miss) instead of letting the
-                # ValueError subclass reach confusion.py's schema-error handler.
+                # Malformed tool-call JSON is a model-output problem, not a server schema problem
+                # (never let the ValueError subclass reach confusion.py's schema-error handler).
+                # The model DID pick a tool, so keep the name: the grader scores it as right tool,
+                # unreadable arguments — an argument failure, not a routing one. Seen 6 times in
+                # 50 tasks with Llama 3.1 8B; as a no-call it read as the model ignoring the tool.
                 print(f"WARNING: model returned malformed tool-call JSON arguments: {tc.function.arguments!r}", file=sys.stderr)
-                call = ToolCall(tool_name=None, arguments={}, call_id=call_id)
+                call = ToolCall(tool_name=tc.function.name, arguments={}, call_id=call_id, error="malformed argument JSON")
             calls.append(call)
             messages.append({"role": "tool", "tool_call_id": call_id, "content": _result_text(result_for, call)})
     return calls
