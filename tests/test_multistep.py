@@ -2,6 +2,8 @@
 its rendering. Fake clients/adapters only — no API key."""
 
 import json
+
+import pytest
 from types import SimpleNamespace
 
 from mcp.types import Tool
@@ -236,3 +238,21 @@ def test_mutation_trials_report_precondition_counts_before_and_after(monkeypatch
     r = run_mutation_trials(m, _catalog(), _StagesFirst(), tool_name="git_commit", new_description="Commits staged changes.", max_steps=3)
     assert r.before_preconditions == 4 and r.after_preconditions == 4
     assert "Reached via an earlier call: 4/4 → 4/4" in render_mutation_results([r])
+
+
+def test_mutation_trials_test_the_precondition_delta_two_sided(monkeypatch):
+    # Base run (via _StagesFirst) reaches git_commit through git_add on all 4 trials. The
+    # mutated run is answered by a model that commits directly: 4/4 → 0/4, four discordant pairs,
+    # two-sided exact p = 2 * (1/2**4) = 0.125. Pass rate is unchanged, so the verdict p stays 1.
+    class _Direct(_StagesFirst):
+        @staticmethod
+        def _plan(task_text):
+            _, target, raw = task_text.split(" ", 2)
+            return [ToolCall(target, json.loads(raw))]
+
+    m = _matrix_multistep(3, monkeypatch)
+    r = run_mutation_trials(m, _catalog(), _Direct(), tool_name="git_commit", new_description="Stages and commits.", max_steps=3)
+    assert (r.before_preconditions, r.after_preconditions) == (4, 0)
+    assert r.precondition_p_value == pytest.approx(0.125)
+    assert r.p_value == 1.0
+    assert "Reached via an earlier call: 4/4 → 0/4 (two-sided p=0.1250" in render_mutation_results([r])

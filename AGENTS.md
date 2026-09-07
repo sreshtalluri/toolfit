@@ -111,7 +111,9 @@ number of tools named, which is how you re-measure one description cheaply. Obse
 
 | Server | Tools | Seeds | Wall time |
 |---|---|---|---|
-| toy server | 5 | 10 | ~5 min |
+| toy server | 5 | 10 | ~2 min (single-step) |
+| mcp-server-git | 12 | 20 | 2551 s (multi-step, two `--mutate`) |
+| mcp-server-git `--only git_commit` | 1 | 10 | 17 s with one `--mutate`, 36 s with two |
 | server-memory | 9 | 10 | ~8 min |
 | server-filesystem | 14 | 10 | ~22 min |
 
@@ -131,7 +133,7 @@ toolfit eval <server> [--seeds N] [--max-steps N] [--model M] [--only NAME]... [
 | `--seeds` | 5 | tasks per tool. **Use 10+ whenever `--mutate`/`--fix` is on** — the exact test's floor p-value is 1/2ⁿ; the CLI warns below 10 |
 | `--max-steps` | 3 | calls the model may make per task; each gets a synthetic result and the task passes if the intended tool is called correctly at any step. `1` = single-call grading (0.1.x numbers) |
 | `--model` | `claude-sonnet-5` | model under test |
-| `--only NAME` | — | generate tasks only for the named tools (repeatable); the model still sees the whole catalog on every call. **Use this when iterating on one description** with `--mutate`/`--fix-tool`: a 12-tool server at 20 seeds drops from ~40 min to ~4. Every `--mutate`/`--fix-tool` tool must also be in `--only`, or the CLI exits 1 before spending anything |
+| `--only NAME` | — | generate tasks only for the named tools (repeatable); the model still sees the whole catalog on every call. **Use this when iterating on one description** with `--mutate`/`--fix-tool`: measured on mcp-server-git, the full 12-tool run at 20 seeds took 2551 s; `--only git_commit` at 10 seeds with one `--mutate` took 17 s. Every `--mutate`/`--fix-tool` tool must also be in `--only`, or the CLI exits 1 before spending anything |
 | `--mutate 'tool:text'` | — | re-run that tool's own tasks with its description replaced; repeatable. Unknown tool or empty text → exit 1 before any call |
 | `--fix` | off | propose + re-measure a rewrite for **every** tool with a failed trial |
 | `--fix-tool NAME` | — | same, only for the named tools; repeatable; implies `--fix`. **Prefer this** — one Bonferroni correction spans every proposal, so 12 proposals at n=10 can never reach significance |

@@ -112,6 +112,32 @@ choice is verifiable. The confusion matrix still shows the first call, so 0.1.x 
 comparable; `--max-steps 1` reproduces them exactly. Cost: roughly 2× the wall time on servers
 where the model actually chains.
 
+Both fixes, measured on the same server at 20 seeds
+([`docs/examples/mcp-server-git-precondition/`](docs/examples/mcp-server-git-precondition/)):
+
+```
+--mutate "git_commit:Records staged changes ... call git_add first ..."
+- Reached via an earlier call: 13/20 → 19/20
+
+--mutate "git_commit:... Automatically stages all modified and new files ..."
+- Reached via an earlier call: 13/20 → 0/20
+```
+
+Pass rate stayed 20/20 both ways, so the pass-rate verdict is "not significant" and the
+precondition line is the result. The second description is only honest if the server really
+auto-stages; the point is that either claim is now checkable in numbers. Re-measuring one tool
+this way doesn't need the whole catalog re-run: `--only git_commit` generates tasks for that tool
+alone while still offering the model all twelve. The same two mutations that way, 10 seeds, 36 s
+against 2551 s for the full run, with the p-value the precondition line now carries:
+
+```
+- Reached via an earlier call: 5/10 → 9/10 (two-sided p=0.1250; informational, not part of the verdict)
+- Reached via an earlier call: 5/10 → 0/10 (two-sided p=0.0625; informational, not part of the verdict)
+```
+
+Same direction as the 20-seed run, but 10 paired trials can't get a 5-trial swing under 0.05.
+That is what `--seeds 20` buys.
+
 The filesystem server tells the other half of the story
 ([`docs/examples/server-filesystem-multistep/`](docs/examples/server-filesystem-multistep/)):
 **55% → 79%**, but not uniformly. Tools that were losing to a precondition went to 5/5

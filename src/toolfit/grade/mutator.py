@@ -10,7 +10,7 @@ from toolfit.connect.client import ToolCatalog
 from toolfit.gen.taskgen import GeneratedTask
 from toolfit.grade.confusion import ConfusionMatrix, synthetic_result
 from toolfit.grade.grader import GradeResult, grade, grade_sequence
-from toolfit.grade.significance import paired_exact_pvalue
+from toolfit.grade.significance import paired_exact_pvalue, paired_exact_pvalue_two_sided
 from toolfit.run.adapters import ModelAdapter, run_steps
 
 
@@ -66,6 +66,9 @@ class MutationTrialResult:
     corrected_alpha: float | None = None  # alpha / number of tests in this run, set by the caller
     before_preconditions: int = 0  # passing trials that reached the tool via an earlier call
     after_preconditions: int = 0
+    # Two-sided exact test on the per-trial precondition flag. Reported, never part of the
+    # acceptance rule: a description can legitimately move this number either way.
+    precondition_p_value: float = 1.0
 
 
 def run_mutation_trials(
@@ -86,8 +89,8 @@ def run_mutation_trials(
     """
     trials = matrix.trials_by_tool[tool_name]
     before_passes = [t.passed for t in trials]
-    before_preconditions = sum(1 for t in trials if t.via_precondition)
-    after_preconditions = 0
+    before_via = [t.via_precondition for t in trials]
+    after_via: list[bool] = []
 
     patched_catalog = patch_description(catalog, tool_name=tool_name, new_description=new_description)
     after_passes = []
@@ -101,7 +104,7 @@ def run_mutation_trials(
         )
         result = grade_sequence(trial.task, calls, catalog_tool_names=patched_catalog.names())
         after_passes.append(result.passed)
-        after_preconditions += int(result.via_precondition)
+        after_via.append(result.via_precondition)
 
     p_value = paired_exact_pvalue(before_passes, after_passes)
     return MutationTrialResult(
@@ -110,6 +113,7 @@ def run_mutation_trials(
         before_passes=before_passes,
         after_passes=after_passes,
         p_value=p_value,
-        before_preconditions=before_preconditions,
-        after_preconditions=after_preconditions,
+        before_preconditions=sum(before_via),
+        after_preconditions=sum(after_via),
+        precondition_p_value=paired_exact_pvalue_two_sided(before_via, after_via),
     )

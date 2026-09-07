@@ -53,6 +53,24 @@ def paired_exact_pvalue(before: list[bool], after: list[bool]) -> float:
     return sum(math.comb(k, j) for j in range(improvements, k + 1)) / 2**k
 
 
+def paired_exact_pvalue_two_sided(before: list[bool], after: list[bool]) -> float:
+    """Two-sided exact McNemar (sign) test on paired binary outcomes, for deltas that are
+    interesting in either direction — the precondition rate, where "state the dependency" pushes
+    it up and "make the tool self-sufficient" pushes it down. Doubles the smaller one-sided tail,
+    capped at 1. Not part of the acceptance rule, which stays one-sided on the pass rate."""
+    if len(before) != len(after):
+        raise ValueError(f"before and after must be paired (same length): {len(before)} vs {len(after)}")
+    if len(before) == 0:
+        raise ValueError("cannot run a significance test with zero trials")
+    ups = sum(1 for b, a in zip(before, after) if a and not b)
+    downs = sum(1 for b, a in zip(before, after) if b and not a)
+    k = ups + downs
+    if k == 0:
+        return 1.0
+    tail = sum(math.comb(k, j) for j in range(max(ups, downs), k + 1)) / 2**k
+    return min(1.0, 2 * tail)
+
+
 def bonferroni_correct(p_values: list[float], *, alpha: float = 0.05) -> list[bool]:
     """Bonferroni correction for testing multiple mutations in one run: a p-value is significant
     only if it clears alpha divided by the number of tests. Returns one bool per input p-value,

@@ -187,7 +187,8 @@ def render_mutation_results(results: list[MutationTrialResult]) -> str:
             f"- New description: {r.new_description!r}",
             f"- Before: {before_passed}/{before_n} ({before_passed / before_n:.0%}), 95% CI [{before_lo:.0%}, {before_hi:.0%}]",
             f"- After:  {after_passed}/{after_n} ({after_passed / after_n:.0%}), 95% CI [{after_lo:.0%}, {after_hi:.0%}]",
-            f"- Reached via an earlier call: {r.before_preconditions}/{before_n} → {r.after_preconditions}/{after_n}",
+            f"- Reached via an earlier call: {r.before_preconditions}/{before_n} → {r.after_preconditions}/{after_n}"
+            f" (two-sided p={r.precondition_p_value:.4f}; informational, not part of the verdict)",
             f"- p-value: {r.p_value:.4f}",
             f"- Verdict (Bonferroni-corrected): {verdict}",
         ]
@@ -213,7 +214,8 @@ def render_fix_results(verdicts: list[FixVerdict]) -> str:
             n = len(t.before_passes)
             lines += [
                 f"- Pass rate: {sum(t.before_passes)}/{n} → {sum(t.after_passes)}/{n}, p-value {t.p_value:.4f}",
-                f"- Reached via an earlier call: {t.before_preconditions}/{n} → {t.after_preconditions}/{n}",
+                f"- Reached via an earlier call: {t.before_preconditions}/{n} → {t.after_preconditions}/{n}"
+                f" (two-sided p={t.precondition_p_value:.4f})",
             ]
         lines.append(f"- Reason: {v.reason}")
     return "\n".join(lines)

@@ -5,10 +5,11 @@ evidence would promote it; nothing is built on speculation.
 
 ## eval
 
-- **Accepted fix on a real server.** Every `--fix` run so far rejected every proposal — correctly,
-  because Sonnet 5 rarely fails for description reasons. The closed loop the README promises has
-  not been shown with real numbers yet. Path: `--only git_commit --mutate ... --seeds 20` on
-  mcp-server-git (in progress), then a weaker model (below). **Priority:** P1
+- **Accepted fix on a real server (pass-rate axis).** Every `--fix` run so far rejected every
+  proposal — correctly, because Sonnet 5 rarely fails for description reasons. The closed loop is
+  now shown on the *precondition* axis (`docs/examples/mcp-server-git-precondition/`: 13/20 → 19/20
+  and 13/20 → 0/20 with p-values), but no run has yet produced an ACCEPTED pass-rate verdict with
+  real numbers. Needs a weaker model (below). **Priority:** P1
 - **Non-Anthropic model under test on the corpus.** `OPENROUTER_API_KEY` was empty during every
   scenario run. A 7B model is far likelier to confuse the toy pairs and give `--fix` something to
   accept; it is also the only way to get evidence for the `(error)` column below. **Priority:** P1,

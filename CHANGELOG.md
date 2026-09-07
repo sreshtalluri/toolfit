@@ -3,10 +3,17 @@
 ## Unreleased
 
 - `--only NAME` (repeatable): generate tasks only for the named tools while still offering the
-  model the whole catalog. This is the iterate loop the fix flow was missing — re-measuring one
-  description on a 12-tool server at 20 seeds drops from ~40 min to ~4. Tools named in
-  `--mutate`/`--fix-tool` must be in `--only`; the CLI exits 1 before any call otherwise. The
-  report's Metadata says which tools were evaluated.
+  model the whole catalog. This is the iterate loop the fix flow was missing — measured on
+  mcp-server-git, the full 12-tool run at 20 seeds took 2551 s and `--only git_commit` with one
+  `--mutate` took 17 s. Tools named in `--mutate`/`--fix-tool` must be in `--only`; the CLI
+  exits 1 before any call otherwise. The report's Metadata says which tools were evaluated.
+- The precondition delta in `--mutate`/`--fix` output now carries its own two-sided exact
+  p-value (`reached via an earlier call: 5/10 → 0/10 (two-sided p=0.0625)`). Informational only:
+  the acceptance rule stays one-sided on the pass rate, because a description can legitimately
+  move the precondition rate either way. Evidence in `docs/examples/mcp-server-git-precondition/`:
+  stating the `git_add` dependency in `git_commit` moved it 13/20 → 19/20; claiming
+  self-sufficiency moved it 13/20 → 0/20; pass rate 20/20 both ways, so the old output read
+  "not significant" for a change that was anything but.
 - Solvability warnings now carry the trial's outcome (`seed 4, failed` / `seed 2, passed anyway`),
   so a reader can tell whether a tool's failures sit on tasks the sampler couldn't express (e.g.
   `head` and `tail` together) or on solvable ones. Unsolvable tasks are still graded on purpose:
