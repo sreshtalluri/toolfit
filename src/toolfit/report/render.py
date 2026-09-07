@@ -7,7 +7,7 @@ import re
 from toolfit.connect.client import ToolCatalog
 from toolfit.fix.fixer import FixVerdict, ProposedFix
 from toolfit.gen.taskgen import GeneratedTask
-from toolfit.grade.confusion import ERROR, HALLUCINATED, NO_CALL, ConfusionMatrix, undeclared_preconditions
+from toolfit.grade.confusion import ERROR, HALLUCINATED, NO_CALL, ConfusionMatrix, TrialRecord, undeclared_preconditions
 from toolfit.grade.mutator import MutationResult, MutationTrialResult
 from toolfit.grade.significance import wilson_interval
 from toolfit.lint.rules import LintFinding
@@ -87,15 +87,97 @@ def _classify_reply(text: str) -> str:
     return "other"
 
 
+def _classify_trial_failure(
+    tool: str, trial: TrialRecord, *, catalog_tool_names: set[str], deprecated_tools: set[str]
+) -> str:
+    """Bucket label for one failed trial (Failure Attribution, design doc). Reuses only data
+    TrialRecord/ToolCall already carry — report-layer aggregation, not new instrumentation.
+    Checked in this order, first match wins:
+    1. deprecated_avoidance — the tool self-declares deprecated (lint's deprecated_tool rule) and
+       the model never called it: correct behaviour, not a failure the catalog author owes a fix.
+    2. mechanics — nothing a description edit can move: a hallucinated tool name, malformed/
+       duplicated argument JSON (arg_diff's "*" key — see adapters.py's _classify_bad_json), or a
+       no-call reply that's neither a clarifying question nor a refusal (garbled/off-topic, per
+       _classify_reply above).
+    3. author_args — the right tool was called with wrong arguments, or the model asked a
+       question/refused instead of calling: both are things a clearer description can fix.
+    4. description_confusion — everything else: a different real catalog tool was called.
+    """
+    named = [c for c in trial.calls if c.tool_name is not None]
+    if tool in deprecated_tools and not any(c.tool_name == tool for c in named):
+        return "deprecated_avoidance"
+    if not named:
+        reply = next((c.text for c in trial.calls if c.text), "")
+        return "author_args" if _classify_reply(reply) in ("asked", "refused") else "mechanics"
+    if named[0].tool_name not in catalog_tool_names:
+        return "mechanics"  # hallucinated tool name
+    if trial.arg_diff.get("*"):
+        return "mechanics"  # malformed/duplicated argument JSON
+    if any(c.tool_name == tool for c in named):
+        return "author_args"  # right tool, wrong arguments
+    return "description_confusion"
+
+
 def render_confusion_matrix(matrix: ConfusionMatrix) -> str:
     tools = sorted(matrix.counts.keys())
     actual_values = {actual for row in matrix.counts.values() for actual in row}
+    catalog_tool_names = (actual_values | set(tools) | set(matrix.descriptions)) - {NO_CALL, HALLUCINATED, ERROR}
     ordered_columns = sorted((actual_values | set(tools)) - {NO_CALL, HALLUCINATED, ERROR})
     for special in (NO_CALL, HALLUCINATED, ERROR):
         if special in actual_values:
             ordered_columns.append(special)
 
-    lines = ["## Confusion Matrix", "", "| Intended \\ Called | " + " | ".join(ordered_columns) + " |"]
+    lines: list[str] = []
+    total_trials = sum(len(trials) for trials in matrix.trials_by_tool.values())
+    if total_trials:
+        # Failure Attribution: splits every failed trial into the four buckets a real trial run
+        # validated (design doc) — printed first, because which bucket a failure lands in decides
+        # who can act on it (catalog author vs. nobody), which matters more than the raw matrix.
+        buckets = {"description_confusion": 0, "author_args": 0, "mechanics": 0, "deprecated_avoidance": 0}
+        malformed_or_duplicated = 0
+        hallucinated_calls = 0
+        for tool, trials in matrix.trials_by_tool.items():
+            for trial in trials:
+                if trial.passed:
+                    continue
+                bucket = _classify_trial_failure(
+                    tool, trial, catalog_tool_names=catalog_tool_names, deprecated_tools=matrix.deprecated_tools
+                )
+                buckets[bucket] += 1
+                if bucket == "mechanics":
+                    named = [c for c in trial.calls if c.tool_name is not None]
+                    if named and named[0].tool_name not in catalog_tool_names:
+                        hallucinated_calls += 1
+                    elif trial.arg_diff.get("*"):
+                        malformed_or_duplicated += 1
+
+        failed = buckets["description_confusion"] + buckets["author_args"] + buckets["mechanics"]
+        lines += ["## Failure Attribution", "", f"{failed}/{total_trials} trials failed."]
+        if failed:
+            lines += [
+                f"- Description confusion: {buckets['description_confusion']} ({buckets['description_confusion'] / failed:.0%})",
+                f"- Author-clarifiable arguments: {buckets['author_args']} ({buckets['author_args'] / failed:.0%})",
+                f"- Model output mechanics: {buckets['mechanics']} ({buckets['mechanics'] / failed:.0%})",
+            ]
+        if buckets["deprecated_avoidance"]:
+            lines.append(
+                f"- Correct deprecated-tool avoidance: {buckets['deprecated_avoidance']} "
+                "(excluded above — the model routed away from a tool the catalog itself says not to use)"
+            )
+
+        # Mechanics floor: the part of the mechanics bucket a description edit can never move,
+        # isolated as its own baseline metric so an author doesn't waste time chasing it.
+        lines += [
+            "",
+            "## Mechanics Floor",
+            "",
+            f"{malformed_or_duplicated + hallucinated_calls}/{total_trials} trial(s) failed for reasons no "
+            f"description edit can change: {malformed_or_duplicated} malformed/duplicated argument JSON, "
+            f"{hallucinated_calls} called a tool name that isn't in the catalog.",
+        ]
+        lines.append("")
+
+    lines += ["## Confusion Matrix", "", "| Intended \\ Called | " + " | ".join(ordered_columns) + " |"]
     lines.append("|---" * (len(ordered_columns) + 1) + "|")
     for tool in tools:
         row = [str(matrix.counts[tool].get(col, 0)) for col in ordered_columns]

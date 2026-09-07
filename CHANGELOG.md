@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Failure Attribution** section, new at the top of the eval report: splits total failure mass
+  into four buckets validated against real trial data — description confusion (off-diagonal
+  confusion-matrix mass), author-clarifiable arguments (right tool, wrong args), model output
+  mechanics (hallucinated tool name, malformed/duplicated argument JSON, garbled no-call), and
+  correct deprecated-tool avoidance (excluded from the failure count, not a bug). Counts and
+  percentages, report-layer aggregation over existing per-trial data — no new instrumentation.
+- **Mechanics Floor** section, printed alongside Failure Attribution: malformed/duplicated
+  argument JSON plus hallucinated tool-name calls, tallied as one baseline metric a catalog
+  author cannot move by editing a description, so they don't spend time chasing it.
+- `deprecated_tool` (from `scan`'s lint rules) is now wired into `eval`: `build_confusion_matrix`
+  runs the static scan once and records which tools self-declare deprecated, feeding Failure
+  Attribution's fourth bucket.
 - `--workers N` (default 4): tools are evaluated concurrently; each tool's own calls stay
   sequential and outcomes are committed in catalog order, so the report is unchanged for a given
   set of answers. Design doc Eng Req #1, finally.

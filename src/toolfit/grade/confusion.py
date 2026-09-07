@@ -17,6 +17,7 @@ from toolfit.connect.client import ToolCatalog
 from toolfit.gen.schema_sampler import count_distinct, sample_arguments
 from toolfit.gen.taskgen import GENERATOR_MODEL, GeneratedTask, check_no_leakage, check_solvability, generate_task
 from toolfit.grade.grader import grade_sequence
+from toolfit.lint.rules import run_lint
 from toolfit.run.adapters import ModelAdapter, ResultFor, ToolCall, run_steps
 
 NO_CALL = "(no call)"
@@ -66,6 +67,11 @@ class ConfusionMatrix:
     # earlier_tool was called before the correct call of intended.
     precondition_edges: dict[str, dict[str, int]] = field(default_factory=dict)
     descriptions: dict[str, str] = field(default_factory=dict)
+    # Tools whose own description self-declares deprecated (lint's deprecated_tool rule, run/rules.py).
+    # Populated once per build_confusion_matrix call — the report's Failure Attribution bucket 4
+    # (design doc) uses this to tell "model correctly avoided a deprecated tool" apart from a real
+    # confusion-matrix miss, without duplicating the self-deprecation regex here.
+    deprecated_tools: set[str] = field(default_factory=set)
     solvability_warnings: list[str] = field(default_factory=list)
     leakage_warnings: list[str] = field(default_factory=list)
     schema_warnings: list[str] = field(default_factory=list)
@@ -118,6 +124,9 @@ def build_confusion_matrix(
     catalog_names = catalog.names()
     catalog_descriptions = {t.name: (t.description or "") for t in catalog.tools}
     matrix.descriptions = catalog_descriptions
+    # Threading the deprecated_tool lint finding into eval (design doc bucket 4): run_lint is
+    # pure/static/free, so this is one extra call, not a refactor of either module.
+    matrix.deprecated_tools = {f.tool_name for f in run_lint(catalog) if f.rule_id == "deprecated_tool" and f.tool_name}
 
     todo = [t for t in catalog.tools if only is None or t.name in only]
     work = partial(

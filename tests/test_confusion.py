@@ -297,3 +297,17 @@ def test_build_confusion_matrix_records_arg_diff_on_trials():
 
     matrix = build_confusion_matrix(ToolCatalog(tools=[CATALOG.tools[0]]), _DropsTitle(), _fake_generator_client(), seeds=1)
     assert matrix.trials_by_tool["tool_a"][0].arg_diff == {"title": "missing"}
+
+
+def test_build_confusion_matrix_records_deprecated_tools_from_lint():
+    # Wires lint/rules.py's deprecated_tool finding into eval (Failure Attribution bucket 4) —
+    # run_lint is pure/static/free, so build_confusion_matrix just calls it once, doesn't
+    # reimplement the self-deprecation check.
+    catalog = ToolCatalog(
+        tools=[
+            Tool(name="tool_a", description="DEPRECATED: use tool_b instead.", inputSchema=_SIMPLE_SCHEMA),
+            Tool(name="tool_b", description="Does B.", inputSchema=_SIMPLE_SCHEMA),
+        ]
+    )
+    matrix = build_confusion_matrix(catalog, _AlwaysToolAAdapter(), _fake_generator_client(), seeds=1)
+    assert matrix.deprecated_tools == {"tool_a"}
