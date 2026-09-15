@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **First accepted fix, measured end to end.** `set_flag` on `google/gemma-3-27b-it`
+  (`ops_server.py`, `--only set_flag --fix-tool set_flag --seeds 40`), picked from the multi-model
+  sweep as the tool with the largest argument-failure signature and zero unparseable JSON:
+  0/40 → 5/40, p=0.0312, ACCEPTED. Every prior fix-loop example in this repo was a rejection (by
+  design — the loop only claims what it measures); this is the first tool whose failures were
+  actually description-shaped rather than capped by model mechanics or precondition-following.
+  `docs/examples/ops-server/report-only-set_flag.md`.
+
 ## 0.2.1 (2026-09-07)
 
 - **Failure Attribution** section, new at the top of the eval report: splits total failure mass
@@ -18,10 +28,13 @@
   sequential and outcomes are committed in catalog order, so the report is unchanged for a given
   set of answers. Design doc Eng Req #1, finally.
 - **Multi-model sweep** (`docs/models.md`): 10 models across `toy_server.py`/`crm_server.py`/
-  `ops_server.py` at 10 seeds. Confirms the pass-rate ceiling isn't JSON formation on any of these
-  models (zero malformed/duplicated-JSON trials across 21 completed combinations) — failures are
-  almost entirely wrong-tool-called or wrong-argument. `toy_server`'s `count_tasks`/`list_tasks`
-  pair (identical descriptions) fails 0/10 on every model tested, independent of model strength.
+  `ops_server.py` at 10 seeds, 30/30 combinations complete. Confirms the pass-rate ceiling isn't
+  JSON formation on any of these models (zero malformed/duplicated-JSON trials across all 30) —
+  failures are almost entirely wrong-tool-called or wrong-argument. `toy_server`'s
+  `count_tasks`/`list_tasks` pair (identical descriptions) fails 0/10 on every model tested,
+  independent of model strength. One model (`gemini-2.5-flash`) is instead unusually
+  cautious — it asks a clarifying question rather than guessing an unstated required argument,
+  which reads as a routing failure in the pass rate but isn't one.
 - **Argument Failures** section: per-parameter `missing` / `extra` / `wrong` / `* malformed/duplicated argument JSON`
   counts for trials that reached the right tool. Structural, no model opinion. This is the answer
   to "strong models don't fail for description reasons, so what do they fail on": the field.

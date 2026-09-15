@@ -175,15 +175,26 @@ trials to clear 0.05, and toolfit says so rather than round up
 ([`docs/examples/toy-server-llama/`](docs/examples/toy-server-llama/)).
 
 **Across ten models, not one.** [`docs/models.md`](docs/models.md) runs the same command over 10
-models — 70B/32B/24B open weights through commercial small/mini tiers — on three servers, 10 seeds
-each. Zero malformed/duplicated-JSON trials across the 21 completed combinations: every model here
-forms JSON fine, so what's left is almost entirely which-tool and which-argument. The toy server's
+models — 70B/32B/24B open weights through commercial small/mini tiers, plus Claude Sonnet 5 itself
+— on three servers, 10 seeds each, all 30 combinations complete. Zero malformed/duplicated-JSON
+trials across all 30: every model here forms JSON fine, so what's left is almost entirely
+which-tool and which-argument. The toy server's
 `count_tasks`/`list_tasks` pair (identical descriptions) fails 0/10 on *every single model tested*,
 best and worst alike — the cleanest evidence that a description gap doesn't shrink with model
 strength. The report now says this directly: a **Failure Attribution** section splits every
 failure into four buckets (description confusion, fixable arguments, model-mechanics no
 description can move, and correct deprecated-tool avoidance), plus a **Mechanics Floor** baseline,
 so you know before rewriting anything whether the catalog can actually fix what's failing.
+
+**And an accepted one.** Every rewrite shown so far got rejected — that's the fix loop refusing to
+claim a win it didn't measure, not a limitation. Point it at a tool the sweep flags as genuinely
+description-shaped instead of argument- or mechanics-limited, and it accepts:
+`ops_server.py`'s `set_flag` on `google/gemma-3-27b-it`
+(`--only set_flag --fix-tool set_flag --seeds 40`), 0/40 → 5/40, p=0.0312. The rewrite named the
+two required arguments the model kept missing (`environment_id`, `enabled` — missing 40/40 and
+36/40) and disambiguated the tool from `create_flag`/`set_config`
+([`docs/examples/ops-server/report-only-set_flag.md`](docs/examples/ops-server/report-only-set_flag.md)).
+Small effect, real p-value, measured — not claimed.
 
 ## Two commands, two budgets
 
