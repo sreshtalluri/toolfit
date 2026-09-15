@@ -6,7 +6,7 @@
 # (rc!=0, e.g. rate-limit exhaustion) before recording it as a real failure.
 # Usage: bash sweep.sh <server_path> <server-name>
 set -u
-cd /Users/sreshtalluri/Documents/Github/toolfit/.claude/worktrees/agent-af4b3e1e61e3a0d2e
+cd "$(dirname "$0")"
 set -a
 source .env
 set +a

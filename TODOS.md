@@ -5,17 +5,24 @@ evidence would promote it; nothing is built on speculation.
 
 ## eval
 
-- **Accepted fix on the pass-rate axis.** Still none, and the reason is now precise. With Llama
-  3.1 8B on `create_task`, 40 seeds and the wider sampler pools: 15/40 → 20/40, p=0.11. The
-  Argument Failures section shows 18/40 trials were `duplicated argument JSON` (the model emits
-  `{...}{...}`), a ceiling no description can move. The demo needs a tool whose failures are
-  description-shaped: pick it from the multi-model sweep (`docs/models.md`) — the tool with the
-  highest `wrong`/`missing` count and the lowest unparseable count on a mid-tier model — then
-  `--only TOOL --fix-tool TOOL --seeds 40`. **Priority:** P1
+- ~~**Accepted fix on the pass-rate axis.**~~ Done 2026-09-10: `set_flag` on `google/gemma-3-27b-it`
+  (`ops_server.py`, `--only set_flag --fix-tool set_flag --seeds 40`), picked from the multi-model
+  sweep as the tool with the largest argument-failure signature and zero unparseable JSON.
+  0/40 → 5/40, p=0.0312, **ACCEPTED** — the first fix this project has measured all the way
+  through. Before: "Turn a flag on or off in one environment, optionally for a percentage of
+  users." After: names the two required arguments (`environment_id`, `enabled`) that the model was
+  missing 40/40 and 36/40 respectively, and disambiguates from `create_flag`/`set_config`. Full
+  report: `docs/examples/ops-server/report-only-set_flag.md`. Still only a 5-point move at n=40 —
+  worth a second pass at higher seeds or a still-more-explicit rewrite before calling the ceiling
+  found, but the mechanism is now proven end to end, not just designed.
 - **Non-Anthropic model under test.** Done 2026-09-06 (Llama 3.1 8B via OpenRouter, toy server,
-  `docs/examples/toy-server-llama/`). Next: the same model on `examples/ops_server.py` at 49
-  tools — expect malformed-JSON and argument failures to dominate. **Priority:** P2
-- ~~**Concurrency across tools (design doc Eng Req #1).**~~ Built 2026-09-07: `--workers` (default 4), outcomes committed in catalog order. Timing comparison pending on the next 49-tool run.
+  `docs/examples/toy-server-llama/`). The broader question — does JSON-mechanics failure dominate
+  at scale for non-Anthropic models — is now answered for 9 other OpenRouter models at 49 tools
+  by the multi-model sweep (`docs/models.md`): no, zero malformed/duplicated JSON across all of
+  them. The original specific ask (Llama 3.1 8B itself, the one model actually shown to hit that
+  ceiling, at 49 tools) is still open — it's smaller than anything in the sweep and is the real
+  test of whether the ceiling gets worse with more tools to confuse it with. **Priority:** P2
+- ~~**Concurrency across tools (design doc Eng Req #1).**~~ Built 2026-09-07: `--workers` (default 4), outcomes committed in catalog order. Timing confirmed on the full 49-tool sweep (`docs/models.md`): 10 sequential models x --workers 4 on ops_server, ~20-33 min each, no failures once run one model at a time.
 - ~~**Argument-level diagnostics.**~~ Built 2026-09-07: `## Argument Failures` per tool and parameter (`missing` / `extra` / `wrong` / `* duplicated|malformed argument JSON`). First use found the Llama duplicated-JSON ceiling within one run.
 - ~~**Separate `(error)` column.**~~ Built 2026-09-06 once the first Llama 3.1 8B run produced
   6 malformed-JSON calls in 50 tasks. Malformed arguments keep the named tool (argument failure);
